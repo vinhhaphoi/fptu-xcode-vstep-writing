@@ -6,7 +6,7 @@ struct EditProfileView: View {
     var body: some View{
         Text("Edit Profile View")
         
-            .navigationTitle("Edit your VSTEP Writing account")
-            .navigationBarTitleDisplayMode(.automatic)
+            .navigationTitle("VSTEP Writing account")
+            .navigationBarTitleDisplayMode(.inline)
     }
 }

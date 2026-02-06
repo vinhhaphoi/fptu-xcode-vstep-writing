@@ -76,7 +76,7 @@ struct SettingsView: View {
     private var EditProfileButton: some View {
         VStack(spacing: 10) {
             Button {
-                navigateToSecurity = true
+                navigateToEditProfile = true
             } label: {
                 HStack(spacing: 15) {
                     Image(systemName: "pencil.and.scribble")
