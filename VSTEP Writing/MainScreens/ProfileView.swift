@@ -102,15 +102,6 @@ struct ProfileView: View {
     // MARK: - Toolbar
     @ToolbarContentBuilder
     private var ToolBarItems: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button(role: .destructive) {
-                showLogoutAlert = true
-            } label: {
-                Image(systemName: "rectangle.portrait.and.arrow.forward")
-                    .foregroundStyle(.red)
-            }
-        }
-
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 showSettings = true
