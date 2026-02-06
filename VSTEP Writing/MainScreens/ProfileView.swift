@@ -25,18 +25,6 @@ struct ProfileView: View {
             profileHeaderCard
                 .padding()
 
-//            // Contact Info
-//            contactInfoSection
-//                .padding()
-
-//            // Edit Profile Button
-//            editProfileButton
-//                .padding()
-
-//            // Settings Button
-//            settingsButton
-//                .padding()
-
             // Policy Buttons
             policyButtons
                 .padding()
@@ -253,62 +241,6 @@ struct ProfileView: View {
         return items
     }
 
-    // MARK: - Edit Profile Button
-    private var editProfileButton: some View {
-        Button {
-            showEditProfile = true
-        } label: {
-            HStack(spacing: 15) {
-                Image(systemName: "pencil.line")
-                    .font(.system(size: 26))
-                    .foregroundStyle(.primary)
-                    .frame(width: 40)
-
-                Text("Edit Profile")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-        }
-        .buttonStyle(.plain)
-        .glassEffect()
-    }
-
-    // MARK: - Settings Button
-    private var settingsButton: some View {
-        Button {
-            showSettings = true
-        } label: {
-            HStack(spacing: 15) {
-                Image(systemName: "gear")
-                    .font(.system(size: 26))
-                    .foregroundStyle(.primary)
-                    .frame(width: 40)
-
-                Text("Settings")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-        }
-        .buttonStyle(.plain)
-        .glassEffect()
-    }
-
     // MARK: - Policy Buttons
     private var policyButtons: some View {
         VStack(spacing: 0) {
@@ -510,34 +442,4 @@ struct AlertMessage: Identifiable {
     let id = UUID()
     let title: String
     let message: String
-}
-
-struct EditProfileView: View {
-    @Environment(\.dismiss) var dismiss
-
-    var body: some View {
-        Text("Edit Profile")
-            .navigationTitle("Edit Profile")
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-struct TermsOfUseView: View {
-    var body: some View {
-        ScrollView {
-            Text("Terms of Use content...")
-                .padding()
-        }
-        .navigationTitle("Terms of Use")
-    }
-}
-
-struct PrivacyPolicyView: View {
-    var body: some View {
-        ScrollView {
-            Text("Privacy Policy content...")
-                .padding()
-        }
-        .navigationTitle("Privacy Policy")
-    }
 }

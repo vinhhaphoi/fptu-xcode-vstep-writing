@@ -8,11 +8,12 @@ struct SettingsView: View {
     // Navigation States
     @State private var navigateToSecurity = false
     @State private var navigateToSubscription = false
+    @State private var navigateToEditProfile = false
     
     var body: some View {
         ScrollView {
-            // Notification Toggle
-            notificationToggle
+            //Edit profile button
+            EditProfileButton
                 .padding()
             
             // Security Button
@@ -23,13 +24,22 @@ struct SettingsView: View {
             subscriptionsButton
                 .padding()
             
-            // About Section
-            aboutSection
+            // Notification Toggle
+            notificationToggle
                 .padding()
+//            
+//            // About Section
+//            aboutSection
+//                .padding()
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
+        
+        .navigationDestination(isPresented: $navigateToEditProfile) {
+            EditProfileView()
+        }
+        
         .navigationDestination(isPresented: $navigateToSecurity) {
             SecuritiesInfoView()
         }
@@ -61,6 +71,46 @@ struct SettingsView: View {
         .padding(.vertical, 16)
         .glassEffect()
     }
+    
+    //MARK: - Edit profile button
+    private var EditProfileButton: some View {
+        VStack(spacing: 10) {
+            Button {
+                navigateToSecurity = true
+            } label: {
+                HStack(spacing: 15) {
+                    Image(systemName: "pencil.and.scribble")
+                        .font(.system(size: 26))
+                        .foregroundStyle(.primary)
+                        .frame(width: 40)
+                    
+                    Text("Edit your VSTEP account")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(.primary)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            }
+            .buttonStyle(.plain)
+            .glassEffect()
+            
+            // Caption
+            HStack(spacing: 8) {
+                Text("Manage your account infomation")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.leading, 20)
+        }
+    }
+    
     
     // MARK: - Security Button
     private var securityButton: some View {
@@ -195,11 +245,5 @@ struct SettingsView: View {
             .buttonStyle(.plain)
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
-    }
-}
-
-#Preview {
-    NavigationStack {
-        SettingsView()
     }
 }
