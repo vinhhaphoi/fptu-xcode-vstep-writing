@@ -5,55 +5,57 @@ struct ContentView: View {
 
     var body: some View {
         TabBarView()
-            .tabBarMinimizeBehavior(.onScrollDown)
     }
+}
 
-    struct TabBarView: View {
-        var body: some View {
-            TabView {
-                // Home Tab
-                Tab("Home", systemImage: "house") {
-                    NavigationStack {
-                        HomeView()
-                            .navigationTitle("Home")
-                            .navigationBarTitleDisplayMode(.large)
-                    }
+struct TabBarView: View {
+    var body: some View {
+        TabView {
+            // Home Tab
+            Tab("Home", systemImage: "house") {
+                NavigationStack {
+                    HomeView()
+                        .navigationTitle("Home")
+                        .navigationBarTitleDisplayMode(.large)
                 }
+            }
 
-                // Learn Tab
-                Tab("Learn", systemImage: "graduationcap") {
-                    NavigationStack {
-                        LearnView()
-                            .navigationTitle("Learn")
-                            .navigationBarTitleDisplayMode(.large)
-                    }
+            // Learn Tab
+            Tab("Learn", systemImage: "graduationcap") {
+                NavigationStack {
+                    LearnView()
+                        .navigationTitle("Learn")
+                        .navigationBarTitleDisplayMode(.large)
                 }
+            }
 
-                // Score Tab
-                Tab("Score", systemImage: "person.crop.square") {
-                    NavigationStack {
-                        ScoreView()
-                            .navigationTitle("Score")
-                            .navigationBarTitleDisplayMode(.large)
-                    }
+            // Score Tab
+            Tab("Score", systemImage: "person.crop.square") {
+                NavigationStack {
+                    ScoreView()
+                        .navigationTitle("Score")
+                        .navigationBarTitleDisplayMode(.large)
                 }
+            }
 
-                // Profile Tab
-                Tab("Profile", systemImage: "person") {
-                    NavigationStack {
-                        ProfileView()
-                            .navigationTitle("Profile")
-                            .navigationBarTitleDisplayMode(.large)
-                    }
+            // Profile Tab
+            Tab("Profile", systemImage: "person") {
+                NavigationStack {
+                    ProfileView()
+                        .navigationTitle("Profile")
+                        .navigationBarTitleDisplayMode(.large)
                 }
+            }
 
-                // Search Tab - Special behavior
-                Tab(role: .search) {
+            // Search Tab - Special role
+            Tab(role: .search) {
+                NavigationStack {
                     SearchView()
-                } label: {
-                    Image(systemName: "magnifyingglass")
+                        .navigationTitle("Search")
+                        .toolbarTitleDisplayMode(.inlineLarge)
                 }
             }
         }
+        .tabBarMinimizeBehavior(.onScrollDown)
     }
 }
