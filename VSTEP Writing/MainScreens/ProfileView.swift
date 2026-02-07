@@ -11,6 +11,7 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var selectedPolicy: PolicyType? = nil
     @State private var showLogoutAlert = false
+    @State private var showContactUs = false
 
     // Photo Upload States
     @State private var showImagePicker = false
@@ -35,6 +36,10 @@ struct ProfileView: View {
 
             // Sign Out Button
             signOutButton
+                .padding()
+            
+            //Contact info button
+            ContactInfoButton
                 .padding()
 
             // App Info Footer
@@ -71,6 +76,10 @@ struct ProfileView: View {
         .navigationDestination(isPresented: $showSettings) {
             SettingsView()
         }
+        .navigationDestination(isPresented: $showContactUs) {
+            ContactInfoView()
+        }
+        
         .navigationDestination(isPresented: $showEditProfile) {
             EditProfileView()
         }
@@ -184,7 +193,7 @@ struct ProfileView: View {
                 contact in
                 HStack(spacing: 15) {
                     Image(systemName: contact.icon)
-                        .font(.system(size: 26))
+                        .font(.system(size: 24))
                         .foregroundStyle(contact.iconColor)
                         .frame(width: 40)
 
@@ -252,7 +261,7 @@ struct ProfileView: View {
                 } label: {
                     HStack(spacing: 15) {
                         Image(systemName: policy.icon)
-                            .font(.system(size: 26))
+                            .font(.system(size: 24))
                             .foregroundStyle(policy.iconColor)
                             .frame(width: 40)
 
@@ -301,7 +310,7 @@ struct ProfileView: View {
     private var darkModeToggle: some View {
         HStack(spacing: 15) {
             Image(systemName: isDarkMode ? "moon.stars.fill" : "sun.max.fill")
-                .font(.system(size: 26))
+                .font(.system(size: 24))
                 .foregroundStyle(isDarkMode ? .indigo : .orange)
                 .frame(width: 40)
                 .contentTransition(.symbolEffect(.replace))
@@ -328,11 +337,34 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 15) {
                 Image(systemName: "rectangle.portrait.and.arrow.forward")
-                    .font(.system(size: 26))
+                    .font(.system(size: 24))
                     .foregroundStyle(.red)
                     .frame(width: 40)
 
                 Text("Sign Out")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+        }
+        .glassEffect()
+    }
+    
+    // MARK: - Contact Button
+    private var ContactInfoButton: some View {
+        Button {
+            showContactUs = true
+        } label: {
+            HStack(spacing: 15) {
+                Image(systemName: "info")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.blue)
+                    .frame(width: 40)
+
+                Text("Contact us")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.primary)
 
