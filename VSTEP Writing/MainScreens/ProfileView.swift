@@ -33,13 +33,13 @@ struct ProfileView: View {
             // Dark Mode Toggle
             darkModeToggle
                 .padding()
-
-            // Sign Out Button
-            signOutButton
-                .padding()
             
             //Contact info button
             ContactInfoButton
+                .padding()
+            
+            // Sign Out Button
+            signOutButton
                 .padding()
 
             // App Info Footer
@@ -183,73 +183,6 @@ struct ProfileView: View {
             }
     }
 
-    // Bỏ hẳn RemoteImageView struct - Không cần!
-
-    // MARK: - Contact Info Section
-    private var contactInfoSection: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(contactInfoList.enumerated()), id: \.offset) {
-                index,
-                contact in
-                HStack(spacing: 15) {
-                    Image(systemName: contact.icon)
-                        .font(.system(size: 24))
-                        .foregroundStyle(contact.iconColor)
-                        .frame(width: 40)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(contact.label)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text(contact.value)
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundStyle(.primary)
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-
-                if index != contactInfoList.count - 1 {
-                    Divider()
-                        .padding(.leading, 70)
-                }
-            }
-        }
-        .glassEffect(in: .rect(cornerRadius: 16.0))
-    }
-
-    private var contactInfoList: [ContactInfo] {
-        var items: [ContactInfo] = []
-
-        // Email
-        let emailValue = authManager.user?.email ?? "Email not available"
-        items.append(
-            ContactInfo(
-                icon: "envelope.badge.person.crop",
-                iconColor: .primary,
-                label: "Email",
-                value: emailValue
-            )
-        )
-
-        // UID (for development/debugging)
-        if let uid = authManager.user?.uid {
-            items.append(
-                ContactInfo(
-                    icon: "number",
-                    iconColor: .primary,
-                    label: "User ID",
-                    value: String(uid.prefix(12)) + "..."
-                )
-            )
-        }
-
-        return items
-    }
-
     // MARK: - Policy Buttons
     private var policyButtons: some View {
         VStack(spacing: 0) {
@@ -359,7 +292,7 @@ struct ProfileView: View {
             showContactUs = true
         } label: {
             HStack(spacing: 15) {
-                Image(systemName: "info")
+                Image(systemName: "info.circle")
                     .font(.system(size: 24))
                     .foregroundStyle(.blue)
                     .frame(width: 40)
@@ -373,6 +306,7 @@ struct ProfileView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
         }
+        .buttonStyle(.plain)
         .glassEffect()
     }
 
@@ -447,14 +381,6 @@ struct ProfileView: View {
 }
 
 // MARK: - Supporting Models
-struct ContactInfo: Identifiable {
-    let id = UUID()
-    let icon: String
-    let iconColor: Color
-    let label: String
-    let value: String
-}
-
 struct PolicyInfo: Identifiable {
     let id = UUID()
     let icon: String
