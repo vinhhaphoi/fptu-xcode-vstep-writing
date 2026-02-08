@@ -1,4 +1,4 @@
-// LearnView.swift - SIMPLE VERSION WITH FIREBASE
+// LearnView.swift - UPDATED WITH ICON
 import SwiftUI
 
 struct LearnView: View {
@@ -23,7 +23,6 @@ struct LearnView: View {
                     }
                     .padding()
                 } else {
-                    // ✅ Hiển thị questions từ Firebase
                     ForEach(Array(firebaseService.questions.enumerated()), id: \.offset) { index, question in
                         LessonCard(lessonNumber: index + 1, question: question)
                     }
@@ -59,7 +58,7 @@ struct LearnView: View {
     }
 }
 
-// MARK: - Lesson Card (Giống gốc 100%)
+// MARK: - Lesson Card WITH ICON ✅
 struct LessonCard: View {
     let lessonNumber: Int
     let question: VSTEPQuestion
@@ -68,14 +67,16 @@ struct LessonCard: View {
         NavigationLink {
             QuestionDetailView(question: question)
         } label: {
-            HStack {
+            HStack(spacing: 16) {
+                Image(systemName: "text.document")
+                    .font(.title3)
+                    .foregroundColor(.blue)
+                
                 VStack(alignment: .leading, spacing: 8) {
-                    // ✅ Hiển thị title từ Firebase
                     Text(question.title)
                         .font(.headline)
                         .foregroundColor(.primary)
                     
-                    // ✅ Hiển thị time limit từ Firebase
                     Text("Duration: \(question.timeLimit) minutes")
                         .font(.subheadline)
                         .foregroundColor(.secondary)

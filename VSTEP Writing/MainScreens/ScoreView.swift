@@ -1,4 +1,3 @@
-// ScoreView.swift - SIMPLE VERSION WITH FIREBASE
 import SwiftUI
 
 struct ScoreView: View {

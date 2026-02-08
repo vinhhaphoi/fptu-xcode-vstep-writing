@@ -26,7 +26,7 @@ struct TabBarView: View {
             }
             
             // Score Tab
-            Tab("Score", systemImage: "chart.bar") {
+            Tab("Score", systemImage: "chart.bar.xaxis.ascending") {
                 NavigationStack {
                     ScoreView()
                 }
