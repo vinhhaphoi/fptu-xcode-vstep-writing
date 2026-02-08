@@ -84,7 +84,8 @@ struct QuestionDetailView: View {
                     .padding()
                     .background(userAnswer.isEmpty ? Color.gray : Color.blue)
                     .foregroundStyle(.white)
-                    .cornerRadius(12)
+                    .cornerRadius(24)
+                    .glassEffect()
                 }
                 .disabled(userAnswer.isEmpty || isSubmitting)
             }

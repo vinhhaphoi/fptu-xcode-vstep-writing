@@ -28,8 +28,6 @@ struct ScoreView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(16)
                 .padding(.horizontal)
                 
                 // Score Breakdown (Giống gốc 100%)
@@ -56,6 +54,7 @@ struct ScoreView: View {
             }
             .padding(.vertical)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Score")
         .navigationBarTitleDisplayMode(.large)
         .refreshable {
@@ -118,7 +117,11 @@ struct ScoreRow: View {
         }
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(16)
+        .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+            )
         .padding(.horizontal)
     }
 }

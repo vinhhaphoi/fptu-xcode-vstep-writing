@@ -33,6 +33,7 @@ struct LearnView: View {
             }
             .padding(.vertical)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Learn")
         .navigationBarTitleDisplayMode(.large)
         .refreshable {
@@ -87,7 +88,11 @@ struct LessonCard: View {
             }
             .padding()
             .background(Color(.systemBackground))
-            .cornerRadius(12)
+            .cornerRadius(16)
+            .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
             .padding(.horizontal)
         }
     }

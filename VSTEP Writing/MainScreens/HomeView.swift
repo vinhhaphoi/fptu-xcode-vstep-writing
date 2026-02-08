@@ -21,6 +21,7 @@ struct HomeView: View {
             }
             .padding(.vertical)
         }
+        .background(Color(.systemGroupedBackground))
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.large)
         .refreshable {
