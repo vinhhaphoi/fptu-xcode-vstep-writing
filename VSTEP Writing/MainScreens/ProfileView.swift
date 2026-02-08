@@ -58,6 +58,8 @@ struct ProfileView: View {
         .onChange(of: selectedImage) { oldValue, newValue in
             Task { await handleImageSelection(newValue) }
         }
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.large)
         .alert("Sign out", isPresented: $showLogoutAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Sign out", role: .destructive) {

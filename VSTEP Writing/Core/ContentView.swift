@@ -15,44 +15,34 @@ struct TabBarView: View {
             Tab("Home", systemImage: "house") {
                 NavigationStack {
                     HomeView()
-                        .navigationTitle("Home")
-                        .navigationBarTitleDisplayMode(.large)
                 }
             }
-
+            
             // Learn Tab
             Tab("Learn", systemImage: "graduationcap") {
                 NavigationStack {
                     LearnView()
-                        .navigationTitle("Learn")
-                        .navigationBarTitleDisplayMode(.large)
                 }
             }
-
+            
             // Score Tab
-            Tab("Score", systemImage: "person.crop.square") {
+            Tab("Score", systemImage: "chart.bar") {
                 NavigationStack {
                     ScoreView()
-                        .navigationTitle("Score")
-                        .navigationBarTitleDisplayMode(.large)
                 }
             }
-
+            
             // Profile Tab
             Tab("Profile", systemImage: "person") {
                 NavigationStack {
                     ProfileView()
-                        .navigationTitle("Profile")
-                        .navigationBarTitleDisplayMode(.large)
                 }
             }
-
-            // Search Tab - Special role
+            
+            // Search Tab
             Tab(role: .search) {
                 NavigationStack {
                     SearchView()
-                        .navigationTitle("Search")
-                        .toolbarTitleDisplayMode(.inlineLarge)
                 }
             }
         }

@@ -1,34 +1,81 @@
+// LearnView.swift - SIMPLE VERSION WITH FIREBASE
 import SwiftUI
 
 struct LearnView: View {
+    @StateObject private var firebaseService = FirebaseService.shared
+    @State private var showError = false
+    
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                ForEach(0..<20) { index in
-                    LessonCard(lessonNumber: index + 1)
+                if firebaseService.isLoading {
+                    ProgressView("Loading...")
+                        .padding()
+                } else if firebaseService.questions.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("No questions available")
+                            .foregroundStyle(.secondary)
+                        
+                        Button("Tap to reload") {
+                            Task { await loadQuestions() }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding()
+                } else {
+                    // ✅ Hiển thị questions từ Firebase
+                    ForEach(Array(firebaseService.questions.enumerated()), id: \.offset) { index, question in
+                        LessonCard(lessonNumber: index + 1, question: question)
+                    }
                 }
+                
                 Spacer(minLength: 50)
             }
             .padding(.vertical)
         }
+        .navigationTitle("Learn")
+        .navigationBarTitleDisplayMode(.large)
+        .refreshable {
+            await loadQuestions()
+        }
+        .task {
+            await loadQuestions()
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK") {}
+        } message: {
+            Text(firebaseService.errorMessage ?? "Unknown error")
+        }
+    }
+    
+    private func loadQuestions() async {
+        do {
+            try await firebaseService.fetchQuestions()
+        } catch {
+            firebaseService.errorMessage = error.localizedDescription
+            showError = true
+        }
     }
 }
 
+// MARK: - Lesson Card (Giống gốc 100%)
 struct LessonCard: View {
     let lessonNumber: Int
+    let question: VSTEPQuestion
     
     var body: some View {
         NavigationLink {
-            Text("Lesson \(lessonNumber) Content")
-                .navigationTitle("Lesson \(lessonNumber)")
+            QuestionDetailView(question: question)
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Lesson \(lessonNumber)")
+                    // ✅ Hiển thị title từ Firebase
+                    Text(question.title)
                         .font(.headline)
                         .foregroundColor(.primary)
                     
-                    Text("Duration: 30 minutes")
+                    // ✅ Hiển thị time limit từ Firebase
+                    Text("Duration: \(question.timeLimit) minutes")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
