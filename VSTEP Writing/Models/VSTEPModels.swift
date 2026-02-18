@@ -118,3 +118,18 @@ enum FirebaseServiceError: LocalizedError {
         }
     }
 }
+
+struct PlanBenefits: Codable {
+    let unlimitedTests: Bool
+    let detailedAnalytics: Bool
+    let offlineMode: Bool
+    let prioritySupport: Bool
+    let adsRemoved: Bool
+}
+
+struct Plan: Codable, Identifiable {
+    @DocumentID var id: String?           // productID
+    let displayName: String
+    let price: Int
+    let benefits: PlanBenefits
+}

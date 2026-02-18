@@ -1,0 +1,113 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "246D6503",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "vi",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "VNM",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "F00BC121",
+      "localizations" : [
+
+      ],
+      "name" : "com.vstep.advanced",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "70000",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "D5F9D39E",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "",
+              "displayName" : "",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.vstep.advanced",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Advanced",
+          "subscriptionGroupID" : "F00BC121",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    },
+    {
+      "id" : "4CE7BD8C",
+      "localizations" : [
+
+      ],
+      "name" : "com.vstep.premier",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "150000",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "C21CB872",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "",
+              "displayName" : "",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.vstep.premier",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Premier",
+          "subscriptionGroupID" : "4CE7BD8C",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

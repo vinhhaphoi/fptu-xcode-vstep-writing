@@ -205,4 +205,11 @@ class FirebaseService: ObservableObject {
         
         return (total, completed, task1, task2)
     }
+    
+    func fetchPlan(productID: String) async -> Plan? {
+        let db = Firestore.firestore()
+        let doc = try? await db.collection("plans").document(productID).getDocument()
+        return try? doc?.data(as: Plan.self)
+    }
+
 }

@@ -1,4 +1,5 @@
 import FirebaseAuth
+import FirebaseFirestore
 import PhotosUI
 import SwiftUI
 
@@ -20,11 +21,24 @@ struct ProfileView: View {
     @State private var isUploadingPhoto = false
     @State private var alertMessage: AlertMessage?
 
+    // Subscription States
+    @State private var subscriptionStatus: String? = nil
+    @State private var subscriptionProductID: String? = nil
+    @State private var subscriptionExpiry: Date? = nil
+    @State private var isLoadingSubscription = true
+
+    private let db = Firestore.firestore()
+
     var body: some View {
         ScrollView {
             // Header Card với Avatar
             profileHeaderCard
                 .padding()
+
+            // ── SUBSCRIPTION STATUS ──
+            subscriptionStatusCard
+                .padding(.horizontal)
+                .padding(.bottom, 4)
 
             // Policy Buttons
             policyButtons
@@ -33,11 +47,11 @@ struct ProfileView: View {
             // Dark Mode Toggle
             darkModeToggle
                 .padding()
-            
-            //Contact info button
+
+            // Contact info button
             ContactInfoButton
                 .padding()
-            
+
             // Sign Out Button
             signOutButton
                 .padding()
@@ -62,9 +76,7 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.large)
         .alert("Sign out", isPresented: $showLogoutAlert) {
             Button("Cancel", role: .cancel) {}
-            Button("Sign out", role: .destructive) {
-                handleLogout()
-            }
+            Button("Sign out", role: .destructive) { handleLogout() }
         } message: {
             Text("Are you confirm to sign out?")
         }
@@ -75,27 +87,17 @@ struct ProfileView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
-        .navigationDestination(isPresented: $showSettings) {
-            SettingsView()
-        }
-        .navigationDestination(isPresented: $showContactUs) {
-            ContactInfoView()
-        }
-        
-        .navigationDestination(isPresented: $showEditProfile) {
-            EditProfileView()
-        }
+        .navigationDestination(isPresented: $showSettings) { SettingsView() }
+        .navigationDestination(isPresented: $showContactUs) { ContactInfoView() }
+        .navigationDestination(isPresented: $showEditProfile) { EditProfileView() }
         .navigationDestination(item: $selectedPolicy) { policyType in
             switch policyType {
-            case .termsOfUse:
-                TermsOfUseView()
-            case .privacyPolicy:
-                PrivacyPolicyView()
+            case .termsOfUse: TermsOfUseView()
+            case .privacyPolicy: PrivacyPolicyView()
             }
         }
-        .toolbar {
-            ToolBarItems
-        }
+        .toolbar { ToolBarItems }
+        .task { await loadSubscription() }
     }
 
     // MARK: - Toolbar
@@ -113,7 +115,6 @@ struct ProfileView: View {
     // MARK: - Profile Header Card
     private var profileHeaderCard: some View {
         VStack(spacing: 20) {
-            // Avatar
             ZStack(alignment: .bottomTrailing) {
                 avatarView
                     .frame(width: 120, height: 120)
@@ -122,14 +123,12 @@ struct ProfileView: View {
                     .overlay {
                         if isUploadingPhoto {
                             ZStack {
-                                Circle()
-                                    .fill(.ultraThinMaterial)
+                                Circle().fill(.ultraThinMaterial)
                                 ProgressView()
                             }
                         }
                     }
 
-                // Edit Photo Button (Small icon overlay)
                 Button {
                     showImagePicker = true
                 } label: {
@@ -148,26 +147,100 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Subscription Status Card
+    private var subscriptionStatusCard: some View {
+        VStack(spacing: 10) {
+            if isLoadingSubscription {
+                // Loading skeleton
+                HStack(spacing: 15) {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 28, height: 28)
+                        .frame(width: 40)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(width: 120, height: 14)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(width: 80, height: 11)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .glassEffect()
+
+            } else if subscriptionStatus == "active", let productID = subscriptionProductID {
+                // Active subscription
+                HStack(spacing: 15) {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.yellow)
+                        .frame(width: 40)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(planDisplayName(for: productID))
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        if let expiry = subscriptionExpiry {
+                            Text("Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .glassEffect()
+
+            } else {
+                // No active subscription
+                HStack(spacing: 15) {
+                    Image(systemName: "crown")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("No Active Plan")
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundStyle(.primary)
+
+//                        Text("Upgrade to unlock all features")
+//                            .font(.caption)
+//                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .glassEffect()
+            }
+        }
+    }
+
     // MARK: - Avatar View
     @ViewBuilder
     private var avatarView: some View {
         if let avatarImage {
-            avatarImage
-                .resizable()
-                .scaledToFill()
+            avatarImage.resizable().scaledToFill()
         } else if let photoURL = authManager.user?.photoURL {
             AsyncImage(url: photoURL) { phase in
                 switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFill()
-                case .failure:
-                    avatarPlaceholder
-                case .empty:
-                    ProgressView()
-                @unknown default:
-                    avatarPlaceholder
+                case .success(let image): image.resizable().scaledToFill()
+                case .failure: avatarPlaceholder
+                case .empty: ProgressView()
+                @unknown default: avatarPlaceholder
                 }
             }
         } else {
@@ -188,9 +261,7 @@ struct ProfileView: View {
     // MARK: - Policy Buttons
     private var policyButtons: some View {
         VStack(spacing: 0) {
-            ForEach(Array(policyList.enumerated()), id: \.offset) {
-                index,
-                policy in
+            ForEach(Array(policyList.enumerated()), id: \.offset) { index, policy in
                 Button {
                     selectedPolicy = policy.type
                 } label: {
@@ -216,8 +287,7 @@ struct ProfileView: View {
                 .buttonStyle(.plain)
 
                 if index != policyList.count - 1 {
-                    Divider()
-                        .padding(.leading, 70)
+                    Divider().padding(.leading, 70)
                 }
             }
         }
@@ -225,19 +295,9 @@ struct ProfileView: View {
     }
 
     private var policyList: [PolicyInfo] {
-        return [
-            PolicyInfo(
-                icon: "newspaper",
-                iconColor: .blue,
-                title: "Terms of Use",
-                type: .termsOfUse
-            ),
-            PolicyInfo(
-                icon: "hand.raised",
-                iconColor: .purple,
-                title: "Privacy Policy",
-                type: .privacyPolicy
-            ),
+        [
+            PolicyInfo(icon: "newspaper", iconColor: .blue, title: "Terms of Use", type: .termsOfUse),
+            PolicyInfo(icon: "hand.raised", iconColor: .purple, title: "Privacy Policy", type: .privacyPolicy),
         ]
     }
 
@@ -287,7 +347,7 @@ struct ProfileView: View {
         }
         .glassEffect()
     }
-    
+
     // MARK: - Contact Button
     private var ContactInfoButton: some View {
         Button {
@@ -322,7 +382,7 @@ struct ProfileView: View {
             Text("Version 1.0.0")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-            
+
             Text("Powered by Vinhhaphoi from NTHT x Vinhhaphoi")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -335,11 +395,40 @@ struct ProfileView: View {
         .multilineTextAlignment(.center)
     }
 
+    // MARK: - Firebase
+    private func loadSubscription() async {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            isLoadingSubscription = false
+            return
+        }
+
+        do {
+            let doc = try await db.collection("subscriptions").document(userID).getDocument()
+            let data = doc.data()
+
+            await MainActor.run {
+                subscriptionStatus = data?["status"] as? String
+                subscriptionProductID = data?["productID"] as? String
+                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
+                isLoadingSubscription = false
+            }
+        } catch {
+            await MainActor.run { isLoadingSubscription = false }
+        }
+    }
+
+    private func planDisplayName(for productID: String) -> String {
+        switch productID {
+        case "com.vstep.advanced": return "Advanced Plan"
+        case "com.vstep.premier": return "Premier Plan"
+        default: return "Premium Plan"
+        }
+    }
+
     // MARK: - Actions
     private func handleLogout() {
         do {
             try authManager.signOut()
-            print("✅ Logged out successfully")
         } catch {
             print("❌ Logout error: \(error.localizedDescription)")
         }
@@ -350,33 +439,25 @@ struct ProfileView: View {
 
         do {
             if let data = try await item.loadTransferable(type: Data.self),
-                let uiImage = UIImage(data: data)
+               let uiImage = UIImage(data: data)
             {
                 await MainActor.run {
                     avatarImage = Image(uiImage: uiImage)
                     isUploadingPhoto = true
                 }
 
-                // TODO: Upload to Firebase Storage
-                // For now, just simulate upload
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
 
                 await MainActor.run {
                     isUploadingPhoto = false
-                    alertMessage = AlertMessage(
-                        title: "Success",
-                        message: "Profile photo updated!"
-                    )
+                    alertMessage = AlertMessage(title: "Success", message: "Profile photo updated!")
                 }
             }
         } catch {
             await MainActor.run {
                 isUploadingPhoto = false
                 avatarImage = nil
-                alertMessage = AlertMessage(
-                    title: "Error",
-                    message: "Failed to load image"
-                )
+                alertMessage = AlertMessage(title: "Error", message: "Failed to load image")
             }
         }
     }
@@ -394,7 +475,6 @@ struct PolicyInfo: Identifiable {
 enum PolicyType: String, Identifiable {
     case termsOfUse = "Terms of Use"
     case privacyPolicy = "Privacy Policy"
-
     var id: String { rawValue }
 }
 
