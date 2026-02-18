@@ -1,0 +1,25 @@
+# Firebase - KHÔNG commit lên Git
+**/GoogleService-Info.plist
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# CocoaPods / SPM
+Pods/
+.build/
+
+# StoreKit (chứa config test)
+# *.storekit  ← comment dòng này nếu muốn share config với team
