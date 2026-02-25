@@ -8,8 +8,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Debug
         if let app = FirebaseApp.app() {
-            print("✅ Firebase configured successfully")
-            print("📱 Firebase app name: \(app.name)")
+            print("Firebase configured successfully")
+            print("Firebase app name: \(app.name)")
         }
         
         return true

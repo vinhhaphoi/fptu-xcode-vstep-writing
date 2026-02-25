@@ -337,7 +337,7 @@ struct SubscriptionsView: View {
                 do {
                     let plan = try doc.data(as: Plan.self)
                     await MainActor.run { plans[id] = plan }
-                    print("✅ [\(id)] decoded: \(plan.displayName)")
+                    print("[\(id)] decoded: \(plan.displayName)")
                 } catch {
                     print("❌ [\(id)] decode error: \(error)")
                 }

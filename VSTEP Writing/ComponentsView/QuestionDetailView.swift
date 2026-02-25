@@ -3,6 +3,7 @@ import SwiftUI
 
 struct QuestionDetailView: View {
     let question: VSTEPQuestion
+    var questionNumber: Int = 0
     @StateObject private var firebaseService = FirebaseService.shared
     @Environment(\.dismiss) private var dismiss
     
@@ -91,7 +92,7 @@ struct QuestionDetailView: View {
             }
             .padding()
         }
-        .navigationTitle(question.questionId.uppercased())
+        .navigationTitle("Question \(questionNumber)")
         .navigationBarTitleDisplayMode(.inline)
         .alert("Success!", isPresented: $showSuccess) {
             Button("OK") {

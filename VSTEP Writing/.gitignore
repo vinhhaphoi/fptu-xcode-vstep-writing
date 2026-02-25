@@ -1,25 +1,21 @@
-# Firebase - KHÔNG commit lên Git
-GoogleService-Info.plist
+# Build artifacts
+build/
+DerivedData/
+*.xcbuilddata
 
-# Xcode
+# Xcode user data
 *.xcuserstate
 xcuserdata/
-*.xccheckout
-*.moved-aside
-DerivedData/
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
+*.xcuserdatad/
+IDEFindNavigatorScopes.plist
 
 # macOS
 .DS_Store
-.AppleDouble
-.LSOverride
 
-# CocoaPods / SPM
-Pods/
+# Swift Package Manager
 .build/
+.swiftpm/
 
-# StoreKit (chứa config test)
-# *.storekit  ← comment dòng này nếu muốn share config với team
+# Firebase keys
+GoogleService-Info.plist
+EOF
