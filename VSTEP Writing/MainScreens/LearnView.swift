@@ -70,11 +70,10 @@ struct LearnView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 if !task1Questions.isEmpty {
-                    // Section label — same horizontal padding as HomeView sections
-                    SectionLabel(title: "Task 1", detail: "Letter · 120+ words", color: .blue)
+                    TaskHeader(title: "Task 1", count: task1Questions.count, color: .blue)
                         .padding(.horizontal)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
+                        .padding(.top, 20)
+                        .padding(.bottom, 12)
 
                     ForEach(task1Questions, id: \.questionId) { question in
                         QuestionRow(
@@ -84,17 +83,16 @@ struct LearnView: View {
                             submissionHistory: allSubmissions[question.questionId] ?? [],
                             isCompleted: submittedIds.contains(question.questionId)
                         )
-                        // Each row manages its own horizontal padding — matches HomeView pattern
                         .padding(.horizontal)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 8)
                     }
                 }
 
                 if !task2Questions.isEmpty {
-                    SectionLabel(title: "Task 2", detail: "Essay · 250+ words", color: .purple)
+                    TaskHeader(title: "Task 2", count: task2Questions.count, color: .purple)
                         .padding(.horizontal)
-                        .padding(.top, 28)
-                        .padding(.bottom, 8)
+                        .padding(.top, 32)
+                        .padding(.bottom, 12)
 
                     ForEach(task2Questions, id: \.questionId) { question in
                         QuestionRow(
@@ -105,7 +103,7 @@ struct LearnView: View {
                             isCompleted: submittedIds.contains(question.questionId)
                         )
                         .padding(.horizontal)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 8)
                     }
                 }
 
@@ -147,27 +145,32 @@ struct LearnView: View {
     }
 }
 
-// MARK: - Section Label
+// MARK: - Task Header
+// Section title with count — no subtitle noise
 
-private struct SectionLabel: View {
+private struct TaskHeader: View {
     let title: String
-    let detail: String
+    let count: Int
     let color: Color
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
             Text(title)
-                .font(.title3.bold())
+                .font(.title2.bold())
                 .foregroundColor(color)
-            Text(detail)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            Spacer()
+
+            Text("\(count)")
+                .font(.caption.weight(.bold))
+                .foregroundColor(color)
+                .frame(width: 22, height: 22)
+                .background(color.opacity(0.12))
+                .clipShape(Circle())
         }
     }
 }
 
 // MARK: - Question Row
+// Clean: number · title · difficulty only. No time, no word count.
 
 private struct QuestionRow: View {
     let number: Int
@@ -177,9 +180,6 @@ private struct QuestionRow: View {
     let isCompleted: Bool
 
     private var taskColor: Color { question.isTask1 ? .blue : .purple }
-    private var metaLine: String {
-        "\(question.difficulty.capitalized)  ·  \(question.timeLimit) min  ·  \(question.minWords)+ words"
-    }
 
     var body: some View {
         NavigationLink {
@@ -190,55 +190,71 @@ private struct QuestionRow: View {
                 submissionHistory: isCompleted ? submissionHistory : []
             )
         } label: {
-            HStack(spacing: 14) {
-
-                // Number badge — standard font, no monospaced design
-                ZStack {
-                    Text(String(format: "%02d", number))
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(isCompleted ? .green : taskColor)
-                }
-                .frame(width: 40, height: 40)
-                .glassEffect(in: .circle)
-
-                // Title + meta
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(question.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                    Text(metaLine)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer(minLength: 8)
-
-                // Trailing accessory
-                if let score = latestSubmission?.score {
-                    VStack(spacing: 1) {
-                        Text(String(format: "%.1f", score))
-                            .font(.subheadline.bold())
-                            .foregroundColor(scoreColor(score))
-                        Text("/ 10")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                } else if isCompleted {
-                    Text("Pending")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(.orange)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(Color(.tertiaryLabel))
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .glassEffect(in: .rect(cornerRadius: 14))
+            rowLabel
         }
         .buttonStyle(.plain)
+    }
+
+    private var rowLabel: some View {
+        HStack(spacing: 16) {
+
+            // Row number — plain text, no border/circle
+            Text(String(format: "%02d", number))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(isCompleted ? .green : Color(.tertiaryLabel))
+                .frame(width: 24)
+
+            // Title + difficulty
+            VStack(alignment: .leading, spacing: 4) {
+                Text(question.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+
+                Text(question.difficulty.capitalized)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            // Trailing: score, pending dot, or chevron
+            trailingView
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var trailingView: some View {
+        if let score = latestSubmission?.score {
+            // Graded: show numeric score
+            VStack(spacing: 1) {
+                Text(String(format: "%.1f", score))
+                    .font(.subheadline.bold())
+                    .foregroundColor(scoreColor(score))
+                Text("/ 10")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        } else if isCompleted {
+            // Submitted but not graded
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(Color.orange)
+                    .frame(width: 6, height: 6)
+                Text("Pending")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        } else {
+            // Not started
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.medium))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
     }
 
     private func scoreColor(_ score: Double) -> Color {
