@@ -10,8 +10,8 @@ struct HomeView: View {
     @State private var recentSubmissions: [UserSubmission] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var selectedAction: QuickActionType?
 
-    /// Lấy trực tiếp từ FirebaseAuth — không phụ thuộc AuthenticationManager
     private var displayName: String {
         let user = Auth.auth().currentUser
         return user?.displayName
@@ -19,10 +19,19 @@ struct HomeView: View {
             ?? "Learner"
     }
 
+    private var averageScore: Double? {
+        let scores = recentSubmissions.compactMap(\.score)
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / Double(scores.count)
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                QuickActionsSection()
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 24) {
+                HomeGreetingSection(
+                    displayName: displayName,
+                    questionsAvailable: firebaseService.questions.count
+                )
 
                 if isLoading {
                     LoadingView()
@@ -31,6 +40,15 @@ struct HomeView: View {
                         Task { await loadData() }
                     }
                 } else {
+                    StatsRowSection(
+                        totalSubmissions: recentSubmissions.count,
+                        averageScore: averageScore
+                    )
+
+                    PrimaryActionCard { selectedAction = .practice }
+
+                    SecondaryActionsRow { selectedAction = $0 }
+
                     RecentActivitySection(
                         submissions: recentSubmissions,
                         questionMap: firebaseService.questionMap
@@ -46,6 +64,15 @@ struct HomeView: View {
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await loadData() }
         .task { await loadData() }
+        // Single navigationDestination at top level to avoid navigation stack conflicts
+        .navigationDestination(item: $selectedAction) { actionType in
+            switch actionType {
+            case .practice: LearnView()
+            case .myScores: ScoreView()
+            case .grammar:  GrammarView()
+            case .tips:     TipsView()
+            }
+        }
     }
 
     private func loadData() async {
@@ -66,149 +93,171 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Welcome Banner
-struct WelcomeBanner: View {
+// MARK: - Greeting Header
+struct HomeGreetingSection: View {
     let displayName: String
     let questionsAvailable: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Welcome back, \(displayName)!")
-                .font(.title.bold())
-                .foregroundColor(.primary)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Hello, \(displayName)!")
+                .font(.title2.bold())
+                .foregroundStyle(.primary)
 
             Text(
                 questionsAvailable > 0
-                    ? "\(questionsAvailable) questions available"
-                    : "Continue your writing practice"
+                    ? "\(questionsAvailable) questions ready for you"
+                    : "Keep practising your writing"
             )
             .font(.subheadline)
-            .foregroundColor(.secondary)
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(
-            LinearGradient(
-                colors: [.blue.opacity(0.3), .purple.opacity(0.3)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .cornerRadius(16)
         .padding(.horizontal)
     }
 }
 
-// MARK: - Loading View
-struct LoadingView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("Loading your activity…")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-    }
-}
-
-// MARK: - Error Banner
-struct ErrorBannerView: View {
-    let message: String
-    let onRetry: () -> Void
+// MARK: - Stats Row
+struct StatsRowSection: View {
+    let totalSubmissions: Int
+    let averageScore: Double?
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-            Text(message)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-            Button("Retry", action: onRetry)
-                .font(.subheadline.weight(.semibold))
+            StatPill(
+                icon: "doc.text.fill",
+                iconColor: .blue,
+                value: "\(totalSubmissions)",
+                label: "Essays"
+            )
+            StatPill(
+                icon: "star.fill",
+                iconColor: .yellow,
+                value: averageScore.map { String(format: "%.1f", $0) } ?? "-",
+                label: "Avg Score"
+            )
+            StatPill(
+                icon: "flame.fill",
+                iconColor: .orange,
+                value: "-",
+                label: "Streak"
+            )
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
         .padding(.horizontal)
     }
 }
 
-// MARK: - Quick Actions Section
-struct QuickActionsSection: View {
-    @State private var selectedAction: QuickActionType?
+struct StatPill: View {
+    let icon: String
+    let iconColor: Color
+    let value: String
+    let label: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Quick Actions")
-                .font(.title2.bold())
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.headline)
+                .foregroundStyle(iconColor)
+            Text(value)
+                .font(.title3.bold().monospacedDigit())
+                .foregroundStyle(.primary)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+}
+
+// MARK: - Primary Action Card
+struct PrimaryActionCard: View {
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Start Writing", systemImage: "pencil.and.outline")
+                        .font(.title3.bold())
+                        .foregroundStyle(.white)
+
+                    Text("Practise VSTEP Task 1 & Task 2 essays")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [.blue, Color(hue: 0.65, saturation: 0.8, brightness: 0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Secondary Actions Row
+struct SecondaryActionsRow: View {
+    let onSelect: (QuickActionType) -> Void
+
+    private let actions: [(icon: String, color: Color, title: String, type: QuickActionType)] = [
+        ("book.closed.fill",  .green,  "Grammar",  .grammar),
+        ("chart.bar.fill",    .purple, "Progress", .myScores),
+        ("lightbulb.fill",    .yellow, "Tips",     .tips),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Explore")
+                .font(.headline)
                 .padding(.horizontal)
 
-            LazyVGrid(
-                columns: [GridItem(.flexible()), GridItem(.flexible())],
-                spacing: 16
-            ) {
-                ForEach(quickActionsList) { action in
-                    Button { selectedAction = action.type } label: {
-                        QuickActionCard(action: action)
+            HStack(spacing: 12) {
+                ForEach(actions, id: \.title) { action in
+                    Button { onSelect(action.type) } label: {
+                        VStack(spacing: 8) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(action.color.opacity(0.12))
+                                    .frame(width: 52, height: 52)
+                                Image(systemName: action.icon)
+                                    .font(.title3)
+                                    .foregroundStyle(action.color)
+                            }
+                            Text(action.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(.systemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
         }
-        .navigationDestination(item: $selectedAction) { actionType in
-            switch actionType {
-            case .practice: LearnView()
-            case .myScores: ScoreView()
-            case .grammar:  GrammarView()
-            case .tips:     TipsView()
-            }
-        }
-    }
-
-    private var quickActionsList: [QuickActionInfo] {
-        [
-            QuickActionInfo(icon: "pencil.circle.fill",  iconColor: .blue,   title: "New Essay",  type: .practice),
-            QuickActionInfo(icon: "book.fill",           iconColor: .green,  title: "Grammar",    type: .grammar),
-            QuickActionInfo(icon: "list.clipboard.fill", iconColor: .orange, title: "Practice",   type: .practice),
-            QuickActionInfo(icon: "chart.bar.fill",      iconColor: .purple, title: "Progress",   type: .myScores),
-        ]
     }
 }
 
-// MARK: - Quick Action Card
-struct QuickActionCard: View {
-    let action: QuickActionInfo
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: action.icon)
-                .font(.title)
-                .foregroundColor(action.iconColor)
-            Text(action.title)
-                .font(.subheadline.weight(.medium))
-                .foregroundColor(.primary)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 100)
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
-    }
-}
-
-// MARK: - Quick Action Models
-struct QuickActionInfo: Identifiable {
-    let id = UUID()
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let type: QuickActionType
-}
-
+// MARK: - Quick Action Type
 enum QuickActionType: String, Identifiable {
     case practice = "Practice"
     case myScores = "My Scores"
@@ -223,8 +272,7 @@ struct RecentActivitySection: View {
     let submissions: [UserSubmission]
     let questionMap: [String: VSTEPQuestion]
 
-    /// Deduplicate: giữ submission MỚI NHẤT mỗi questionId
-    /// submissions đã sort descending từ Firestore → filter lấy cái đầu tiên gặp
+    // Keep only the most recent submission per question, assuming descending sort from Firestore
     private var uniqueSubmissions: [UserSubmission] {
         var seen = Set<String>()
         return submissions.filter { seen.insert($0.questionId).inserted }
@@ -234,7 +282,7 @@ struct RecentActivitySection: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Recent Activity")
-                    .font(.title2.bold())
+                    .font(.headline)
                 Spacer()
                 if !uniqueSubmissions.isEmpty {
                     NavigationLink(destination: ScoreView()) {
@@ -249,11 +297,13 @@ struct RecentActivitySection: View {
             if uniqueSubmissions.isEmpty {
                 EmptyActivityView()
             } else {
-                ForEach(uniqueSubmissions.prefix(5)) { submission in
-                    ActivityRow(
-                        submission: submission,
-                        question: questionMap[submission.questionId]
-                    )
+                VStack(spacing: 10) {
+                    ForEach(uniqueSubmissions.prefix(5)) { submission in
+                        ActivityRow(
+                            submission: submission,
+                            question: questionMap[submission.questionId]
+                        )
+                    }
                 }
             }
         }
@@ -302,12 +352,11 @@ struct ActivityRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Color bar — phân biệt Task 1 / Task 2
+            // Left accent bar distinguishes task type at a glance
             RoundedRectangle(cornerRadius: 3)
                 .fill(taskBadgeColor)
                 .frame(width: 4, height: 64)
 
-            // Info
             VStack(alignment: .leading, spacing: 6) {
                 Text(question?.title ?? submission.questionId.uppercased())
                     .font(.subheadline.weight(.semibold))
@@ -333,7 +382,7 @@ struct ActivityRow: View {
 
             Spacer(minLength: 8)
 
-            // Score or Status
+            // Show numeric score when available, otherwise display status icon
             VStack(spacing: 2) {
                 if let scoreText = scoreText {
                     Text(scoreText)
@@ -351,7 +400,7 @@ struct ActivityRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color(.systemBackground))
-        .cornerRadius(14)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
     }
@@ -369,7 +418,7 @@ struct BadgeView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(color.opacity(0.12))
-            .cornerRadius(6)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
 
@@ -389,6 +438,43 @@ struct StatusBadgeView: View {
     }
 }
 
+// MARK: - Loading View
+struct LoadingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading your activity...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+}
+
+// MARK: - Error Banner
+struct ErrorBannerView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
+            Button("Retry", action: onRetry)
+                .font(.subheadline.weight(.semibold))
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal)
+    }
+}
+
 // MARK: - Empty Activity View
 struct EmptyActivityView: View {
     var body: some View {
@@ -396,10 +482,10 @@ struct EmptyActivityView: View {
             Image(systemName: "tray")
                 .font(.system(size: 44))
                 .foregroundColor(.secondary)
-            Text("No recent activity")
+            Text("No activity yet")
                 .font(.headline)
                 .foregroundColor(.secondary)
-            Text("Complete your first essay to see progress here.")
+            Text("Complete your first essay to see your progress here.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -407,16 +493,19 @@ struct EmptyActivityView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal)
     }
 }
 
-// MARK: - Grammar & Tips Placeholders
+// MARK: - Grammar Placeholder
 struct GrammarView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                Text("📚 Grammar Guide").font(.largeTitle.bold())
-                Text("Coming soon…").foregroundStyle(.secondary)
+                Text("Grammar Guide").font(.largeTitle.bold())
+                Text("Coming soon...").foregroundStyle(.secondary)
             }
             .padding()
         }
@@ -425,12 +514,13 @@ struct GrammarView: View {
     }
 }
 
+// MARK: - Tips Placeholder
 struct TipsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                Text("💡 Writing Tips").font(.largeTitle.bold())
-                Text("Coming soon…").foregroundStyle(.secondary)
+                Text("Writing Tips").font(.largeTitle.bold())
+                Text("Coming soon...").foregroundStyle(.secondary)
             }
             .padding()
         }

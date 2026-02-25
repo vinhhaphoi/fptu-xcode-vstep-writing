@@ -27,6 +27,7 @@ struct VSTEPQuestion: Identifiable, Codable {
     let category: String
     let title: String
     let situation: String?
+    let task: String?
     let topic: String?
     let instruction: String?
     let requirements: [String]?
@@ -43,8 +44,9 @@ struct VSTEPQuestion: Identifiable, Codable {
     var timeLimit: Int { isTask1 ? 20 : 40 }
 
     enum CodingKeys: String, CodingKey {
-        case questionId, taskType, category, title, situation, topic
-        case instruction, requirements, formalityLevel, essayType
+        case questionId, taskType, category, title, situation
+        case task
+        case topic, instruction, requirements, formalityLevel, essayType
         case difficulty, tags, suggestedStructure
     }
 }

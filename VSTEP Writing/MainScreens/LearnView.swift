@@ -10,22 +10,29 @@ struct LearnView: View {
     @State private var allSubmissions: [String: [UserSubmission]] = [:]
     @State private var showError = false
     @State private var errorMsg = ""
+    @State private var selectedRankID: String? = nil
 
     private var task1Questions: [VSTEPQuestion] {
         firebaseService.questions.filter { $0.isTask1 }
     }
+
     private var task2Questions: [VSTEPQuestion] {
         firebaseService.questions.filter { $0.isTask2 }
+    }
+
+    private var displayedRanks: [VSTEPRank] {
+        guard let id = selectedRankID else { return VSTEPRank.allRanks }
+        return VSTEPRank.allRanks.filter { $0.id == id }
     }
 
     var body: some View {
         Group {
             if firebaseService.isLoading && firebaseService.questions.isEmpty {
-                loadingView
+                LearnLoadingView()
             } else if firebaseService.questions.isEmpty {
-                emptyView
+                LearnEmptyView { Task { await loadData() } }
             } else {
-                questionList
+                mainContent
             }
         }
         .navigationTitle("Learn")
@@ -33,91 +40,41 @@ struct LearnView: View {
         .refreshable { await loadData() }
         .task { await loadData() }
         .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: { Text(errorMsg) }
-    }
-
-    // MARK: - States
-
-    private var loadingView: some View {
-        VStack(spacing: 12) {
-            ProgressView().scaleEffect(1.2)
-            Text("Loading questions…")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            Button("OK") { }
+        } message: {
+            Text(errorMsg)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
     }
 
-    private var emptyView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "book.closed")
-                .font(.system(size: 44))
-                .foregroundColor(.secondary)
-            Text("No questions available")
-                .foregroundStyle(.secondary)
-            Button("Reload") { Task { await loadData() } }
-                .buttonStyle(.bordered)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
+    // MARK: - Main Content
 
-    // MARK: - Question List
+    private var mainContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                RankFilterRow(
+                    ranks: VSTEPRank.allRanks,
+                    selectedID: $selectedRankID
+                )
 
-    private var questionList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-
-                if !task1Questions.isEmpty {
-                    TaskHeader(title: "Task 1", count: task1Questions.count, color: .blue)
-                        .padding(.horizontal)
-                        .padding(.top, 20)
-                        .padding(.bottom, 12)
-
-                    ForEach(task1Questions, id: \.questionId) { question in
-                        QuestionRow(
-                            number: extractNumber(from: question.questionId),
-                            question: question,
-                            latestSubmission: latestSubmissions[question.questionId],
-                            submissionHistory: allSubmissions[question.questionId] ?? [],
-                            isCompleted: submittedIds.contains(question.questionId)
-                        )
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                    }
+                ForEach(displayedRanks) { rank in
+                    RankSection(
+                        rank: rank,
+                        task1Questions: task1Questions,
+                        task2Questions: task2Questions,
+                        submittedIds: submittedIds,
+                        latestSubmissions: latestSubmissions,
+                        allSubmissions: allSubmissions
+                    )
                 }
 
-                if !task2Questions.isEmpty {
-                    TaskHeader(title: "Task 2", count: task2Questions.count, color: .purple)
-                        .padding(.horizontal)
-                        .padding(.top, 32)
-                        .padding(.bottom, 12)
-
-                    ForEach(task2Questions, id: \.questionId) { question in
-                        QuestionRow(
-                            number: extractNumber(from: question.questionId),
-                            question: question,
-                            latestSubmission: latestSubmissions[question.questionId],
-                            submissionHistory: allSubmissions[question.questionId] ?? [],
-                            isCompleted: submittedIds.contains(question.questionId)
-                        )
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                    }
-                }
-
-                Spacer(minLength: 60)
+                Spacer(minLength: 40)
             }
+            .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
     }
 
-    // MARK: - Helpers
-
-    private func extractNumber(from questionId: String) -> Int {
-        Int(questionId.filter(\.isNumber)) ?? 0
-    }
+    // MARK: - Data Loading
 
     private func loadData() async {
         do {
@@ -125,18 +82,15 @@ struct LearnView: View {
             guard firebaseService.currentUserId != nil else { return }
             try? await firebaseService.fetchUserProgress()
             submittedIds = Set(firebaseService.userProgress?.completedQuestions ?? [])
-
             if let subs = try? await firebaseService.fetchUserSubmissions() {
                 var latestMap: [String: UserSubmission] = [:]
                 var allMap: [String: [UserSubmission]] = [:]
                 for sub in subs {
-                    if latestMap[sub.questionId] == nil {
-                        latestMap[sub.questionId] = sub
-                    }
+                    if latestMap[sub.questionId] == nil { latestMap[sub.questionId] = sub }
                     allMap[sub.questionId, default: []].append(sub)
                 }
                 latestSubmissions = latestMap
-                allSubmissions    = allMap
+                allSubmissions = allMap
             }
         } catch {
             errorMsg = error.localizedDescription
@@ -145,32 +99,212 @@ struct LearnView: View {
     }
 }
 
-// MARK: - Task Header
-// Section title with count — no subtitle noise
+// MARK: - Rank Filter Row
 
-private struct TaskHeader: View {
-    let title: String
-    let count: Int
-    let color: Color
+struct RankFilterRow: View {
+    let ranks: [VSTEPRank]
+    @Binding var selectedID: String?
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Text(title)
-                .font(.title2.bold())
-                .foregroundColor(color)
-
-            Text("\(count)")
-                .font(.caption.weight(.bold))
-                .foregroundColor(color)
-                .frame(width: 22, height: 22)
-                .background(color.opacity(0.12))
-                .clipShape(Circle())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                RankChip(label: "All", color: .blue, isSelected: selectedID == nil) {
+                    selectedID = nil
+                }
+                ForEach(ranks) { rank in
+                    RankChip(
+                        label: rank.cefr,
+                        color: rank.color,
+                        isSelected: selectedID == rank.id
+                    ) {
+                        selectedID = (selectedID == rank.id) ? nil : rank.id
+                    }
+                }
+            }
+            .padding(.horizontal)
         }
     }
 }
 
+struct RankChip: View {
+    let label: String
+    let color: Color
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(isSelected ? color : Color(.systemBackground))
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.15), value: isSelected)
+    }
+}
+
+// MARK: - Rank Section
+
+struct RankSection: View {
+    let rank: VSTEPRank
+    let task1Questions: [VSTEPQuestion]
+    let task2Questions: [VSTEPQuestion]
+    let submittedIds: Set<String>
+    let latestSubmissions: [String: UserSubmission]
+    let allSubmissions: [String: [UserSubmission]]
+
+    private func filtered(_ pool: [VSTEPQuestion]) -> [VSTEPQuestion] {
+        pool.filter { rank.difficulties.contains($0.difficulty.lowercased()) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("VSTEP \(rank.cefr)")
+                    .font(.headline)
+                Text(rank.displayName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+
+            // Grouped block: all task categories in one card with Dividers
+            // mirrors policyButtons pattern in ProfileView
+            VStack(spacing: 0) {
+                ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) { index, category in
+                    let pool = category.taskType == "task1"
+                        ? filtered(task1Questions)
+                        : filtered(task2Questions)
+
+                    NavigationLink {
+                        TaskQuestionListView(
+                            title: category.title,
+                            questions: pool,
+                            submittedIds: submittedIds,
+                            latestSubmissions: latestSubmissions,
+                            allSubmissions: allSubmissions
+                        )
+                    } label: {
+                        // Row structure matches ProfileView exactly:
+                        // icon.frame(40) | text block | Spacer | count badge | chevron
+                        HStack(spacing: 15) {
+                            Image(systemName: category.icon)
+                                .font(.system(size: 24))
+                                .foregroundStyle(category.color)
+                                .frame(width: 40)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(category.title)
+                                    .font(.system(size: 17, weight: .regular))
+                                    .foregroundStyle(.primary)
+                                Text(category.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if !pool.isEmpty {
+                                Text("\(pool.count)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(category.color)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(category.color.opacity(0.1))
+                                    .clipShape(Capsule())
+                            }
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color(.tertiaryLabel))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.plain)
+                    // .disabled(pool.isEmpty)
+
+                    if index < rank.taskCategories.count - 1 {
+                        // Inset divider aligns with text, not icon — matches ProfileView
+                        Divider()
+                            .padding(.leading, 70)
+                    }
+                }
+            }
+            .glassEffect(in: .rect(cornerRadius: 16.0))
+            .padding(.horizontal)
+        }
+    }
+}
+
+// MARK: - Task Question List
+// Each question row is an individual solo glassEffect block,
+// matching the subscriptionStatusCard / darkModeToggle pattern in ProfileView.
+
+struct TaskQuestionListView: View {
+    let title: String
+    let questions: [VSTEPQuestion]
+    let submittedIds: Set<String>
+    let latestSubmissions: [String: UserSubmission]
+    let allSubmissions: [String: [UserSubmission]]
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 10) {
+                if questions.isEmpty {
+                    emptyBlock
+                } else {
+                    ForEach(Array(questions.enumerated()), id: \.element.questionId) { index, question in
+                        QuestionRow(
+                            number: extractNumber(from: question.questionId),
+                            question: question,
+                            latestSubmission: latestSubmissions[question.questionId],
+                            submissionHistory: allSubmissions[question.questionId] ?? [],
+                            isCompleted: submittedIds.contains(question.questionId)
+                        )
+                        // Solo block per row — same as each individual card in ProfileView
+                        .glassEffect()
+                        .padding(.horizontal)
+                    }
+                }
+
+                Spacer(minLength: 60)
+            }
+            .padding(.top, 16)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var emptyBlock: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("No questions available for this level")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .glassEffect(in: .rect(cornerRadius: 16.0))
+        .padding(.horizontal)
+    }
+
+    private func extractNumber(from questionId: String) -> Int {
+        Int(questionId.filter(\.isNumber)) ?? 0
+    }
+}
+
 // MARK: - Question Row
-// Clean: number · title · difficulty only. No time, no word count.
+// Plain HStack with padding only — glassEffect is applied by the parent per row.
 
 private struct QuestionRow: View {
     let number: Int
@@ -179,81 +313,65 @@ private struct QuestionRow: View {
     let submissionHistory: [UserSubmission]
     let isCompleted: Bool
 
-    private var taskColor: Color { question.isTask1 ? .blue : .purple }
-
     var body: some View {
-        NavigationLink {
-            QuestionDetailView(
+        NavigationLink(
+            destination: QuestionDetailView(
                 question: question,
                 questionNumber: number,
                 latestSubmission: isCompleted ? latestSubmission : nil,
                 submissionHistory: isCompleted ? submissionHistory : []
             )
-        } label: {
-            rowLabel
+        ) {
+            HStack(spacing: 15) {
+                Text(String(format: "%02d", number))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isCompleted ? .green : Color(.tertiaryLabel))
+                    .frame(width: 40)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(question.title)
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(question.difficulty.capitalized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                trailingView
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(.tertiaryLabel))
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
         }
         .buttonStyle(.plain)
-    }
-
-    private var rowLabel: some View {
-        HStack(spacing: 16) {
-
-            // Row number — plain text, no border/circle
-            Text(String(format: "%02d", number))
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(isCompleted ? .green : Color(.tertiaryLabel))
-                .frame(width: 24)
-
-            // Title + difficulty
-            VStack(alignment: .leading, spacing: 4) {
-                Text(question.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-
-                Text(question.difficulty.capitalized)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            // Trailing: score, pending dot, or chevron
-            trailingView
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder
     private var trailingView: some View {
         if let score = latestSubmission?.score {
-            // Graded: show numeric score
             VStack(spacing: 1) {
                 Text(String(format: "%.1f", score))
                     .font(.subheadline.bold())
-                    .foregroundColor(scoreColor(score))
+                    .foregroundStyle(scoreColor(score))
                 Text("/ 10")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
         } else if isCompleted {
-            // Submitted but not graded
             HStack(spacing: 4) {
                 Circle()
                     .fill(Color.orange)
                     .frame(width: 6, height: 6)
                 Text("Pending")
                     .font(.caption)
-                    .foregroundColor(.orange)
+                    .foregroundStyle(.orange)
             }
-        } else {
-            // Not started
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.medium))
-                .foregroundColor(Color(.tertiaryLabel))
         }
     }
 
@@ -264,4 +382,133 @@ private struct QuestionRow: View {
         default:    return .red
         }
     }
+}
+
+// MARK: - Loading View
+
+struct LearnLoadingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView().scaleEffect(1.2)
+            Text("Loading questions")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+}
+
+// MARK: - Empty View
+
+struct LearnEmptyView: View {
+    let onReload: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "book.closed")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("No questions available")
+                .foregroundStyle(.secondary)
+            Button("Reload", action: onReload)
+                .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
+    }
+}
+
+// MARK: - VSTEP Rank Model
+
+struct VSTEPRank: Identifiable {
+    let id: String
+    let cefr: String
+    let displayName: String
+    let color: Color
+    // Maps to VSTEPQuestion.difficulty values stored in Firestore
+    let difficulties: [String]
+    let taskCategories: [TaskCategory]
+}
+
+struct TaskCategory {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let taskType: String    // "task1" | "task2"
+}
+
+extension VSTEPRank {
+    static let allRanks: [VSTEPRank] = [
+        VSTEPRank(
+            id: "b1",
+            cefr: "B1",
+            displayName: "Pre-Intermediate",
+            color: .blue,
+            difficulties: ["easy"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Visual Description",
+                    subtitle: "Describe a chart, graph or table (~150 words)",
+                    icon: "chart.bar",
+                    color: .blue,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Opinion Essay",
+                    subtitle: "Give your opinion on a familiar topic (~250 words)",
+                    icon: "text.bubble",
+                    color: .indigo,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+        VSTEPRank(
+            id: "b2",
+            cefr: "B2",
+            displayName: "Upper-Intermediate",
+            color: .purple,
+            difficulties: ["medium"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Data Analysis",
+                    subtitle: "Analyse trends and compare data (~150 words)",
+                    icon: "chart.line.uptrend.xyaxis",
+                    color: .purple,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Argumentative Essay",
+                    subtitle: "Argue both sides of a complex issue (~250 words)",
+                    icon: "text.book.closed",
+                    color: .orange,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+        VSTEPRank(
+            id: "c1",
+            cefr: "C1",
+            displayName: "Advanced",
+            color: .red,
+            difficulties: ["hard"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Complex Visuals",
+                    subtitle: "Synthesise data from multiple charts (~150 words)",
+                    icon: "chart.pie",
+                    color: .red,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Critical Essay",
+                    subtitle: "Evaluate ideas with advanced vocabulary (~250 words)",
+                    icon: "doc.richtext",
+                    color: .pink,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+    ]
 }

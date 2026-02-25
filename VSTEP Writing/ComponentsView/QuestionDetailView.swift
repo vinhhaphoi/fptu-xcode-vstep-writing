@@ -86,22 +86,42 @@ struct QuestionDetailView: View {
         }
     }
 
-    // MARK: - Prompt Section (reused in both states)
+    // MARK: - Prompt Section
 
     var promptSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+
+            // Task 1: situation + "Write a letter to..." task line
             if let situation = question.situation {
                 Text(situation)
                     .font(.body)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if let task = question.task {
+                Text(task)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Task 2: topic + instruction
             if let topic = question.topic {
                 Text(topic)
                     .font(.body)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if let instruction = question.instruction {
+                Text(instruction)
+                    .font(.body.weight(.medium))
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // Task 1: requirements bullet list
             if let requirements = question.requirements, !requirements.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
@@ -122,7 +142,34 @@ struct QuestionDetailView: View {
                     }
                 }
             }
+
+            // Task 2: suggested structure (optional, collapsed under a disclosure)
+            if let structure = question.suggestedStructure, !structure.isEmpty {
+                Divider()
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(structure, id: \.self) { step in
+                            HStack(alignment: .top, spacing: 10) {
+                                Circle()
+                                    .fill(taskColor)
+                                    .frame(width: 5, height: 5)
+                                    .padding(.top, 7)
+                                Text(step)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                } label: {
+                    Text("Suggested Structure")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)  // fix card width to always fill container
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16))
     }
