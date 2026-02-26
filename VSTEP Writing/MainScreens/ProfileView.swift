@@ -13,6 +13,7 @@ struct ProfileView: View {
     @State private var selectedPolicy: PolicyType? = nil
     @State private var showLogoutAlert = false
     @State private var showContactUs = false
+    @State private var showSubscription = false
 
     // Photo Upload States
     @State private var showImagePicker = false
@@ -90,6 +91,7 @@ struct ProfileView: View {
         .navigationDestination(isPresented: $showSettings) { SettingsView() }
         .navigationDestination(isPresented: $showContactUs) { ContactInfoView() }
         .navigationDestination(isPresented: $showEditProfile) { EditProfileView() }
+        .navigationDestination(isPresented: $showSubscription) { SubscriptionsView() }
         .navigationDestination(item: $selectedPolicy) { policyType in
             switch policyType {
             case .termsOfUse: TermsOfUseView()
@@ -157,7 +159,6 @@ struct ProfileView: View {
                         .fill(Color.secondary.opacity(0.2))
                         .frame(width: 28, height: 28)
                         .frame(width: 40)
-
                     VStack(alignment: .leading, spacing: 6) {
                         RoundedRectangle(cornerRadius: 4)
                             .fill(Color.secondary.opacity(0.2))
@@ -173,61 +174,73 @@ struct ProfileView: View {
                 .glassEffect()
 
             } else if subscriptionStatus == "active", let productID = subscriptionProductID {
-                // Active subscription
-                HStack(spacing: 15) {
-                    Image(systemName: "crown.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.yellow)
-                        .frame(width: 40)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(planDisplayName(for: productID))
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.primary)
-
-                        if let expiry = subscriptionExpiry {
-                            Text("Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // ── Active subscription
+                Button { showSubscription = true } label: {
+                    HStack(spacing: 15) {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.yellow)
+                            .frame(width: 40)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(planDisplayName(for: productID))
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.primary)
+                            if let expiry = subscriptionExpiry {
+                                Text("Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.tertiary)
                     }
-
-                    Spacer()
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .buttonStyle(.plain)
                 .glassEffect()
 
             } else {
-                // No active subscription
-                HStack(spacing: 15) {
-                    Image(systemName: "crown")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("No Active Plan")
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundStyle(.primary)
-
-//                        Text("Upgrade to unlock all features")
-//                            .font(.caption)
-//                            .foregroundStyle(.secondary)
+                // ── No active subscription
+                Button { showSubscription = true } label: {
+                    HStack(spacing: 15) {
+                        Image(systemName: "crown")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("No Active Plan")
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundStyle(.primary)
+                            Text("Upgrade to unlock all features")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.tertiary)
                     }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .buttonStyle(.plain)
                 .glassEffect()
             }
+
+            // Caption
+//            HStack(spacing: 8) {
+//                Text("Manage your subscriptions")
+//                    .font(.caption)
+//                    .foregroundStyle(.secondary)
+//                Spacer()
+//            }
+//            .padding(.leading, 20)
         }
     }
+
 
     // MARK: - Avatar View
     @ViewBuilder
