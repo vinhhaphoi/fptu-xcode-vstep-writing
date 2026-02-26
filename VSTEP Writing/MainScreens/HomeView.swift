@@ -1,6 +1,6 @@
+import FirebaseAuth
 // HomeView.swift
 import SwiftUI
-import FirebaseAuth
 
 // MARK: - HomeView
 struct HomeView: View {
@@ -61,7 +61,8 @@ struct HomeView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Home")
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar { ToolBarItems }
         .refreshable { await loadData() }
         .task { await loadData() }
         // Single navigationDestination at top level to avoid navigation stack conflicts
@@ -69,8 +70,8 @@ struct HomeView: View {
             switch actionType {
             case .practice: LearnView()
             case .myScores: ScoreView()
-            case .grammar:  GrammarView()
-            case .tips:     TipsView()
+            case .grammar: GrammarView()
+            case .tips: TipsView()
             }
         }
     }
@@ -89,6 +90,35 @@ struct HomeView: View {
         } catch {
             errorMessage = "Failed to load data. Pull down to retry."
             print("[HomeView] loadData error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Toolbar
+    @ToolbarContentBuilder
+    private var ToolBarItems: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Grammar", systemImage: "text.book.closed") {
+                // Button action here
+            }
+            .tint(.green)
+        }
+        
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("AvgScore", systemImage: "star") {
+                // Button action here
+            }
+            .tint(.orange)
+        }
+        
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Tips", systemImage: "lightbulb") {
+                // Button action here
+            }
+            .tint(.yellow)
         }
     }
 }
@@ -198,7 +228,10 @@ struct PrimaryActionCard: View {
             .padding(20)
             .background(
                 LinearGradient(
-                    colors: [.blue, Color(hue: 0.65, saturation: 0.8, brightness: 0.85)],
+                    colors: [
+                        .blue,
+                        Color(hue: 0.65, saturation: 0.8, brightness: 0.85),
+                    ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -215,11 +248,12 @@ struct PrimaryActionCard: View {
 struct SecondaryActionsRow: View {
     let onSelect: (QuickActionType) -> Void
 
-    private let actions: [(icon: String, color: Color, title: String, type: QuickActionType)] = [
-        ("book.closed.fill",  .green,  "Grammar",  .grammar),
-        ("chart.bar.fill",    .purple, "Progress", .myScores),
-        ("lightbulb.fill",    .yellow, "Tips",     .tips),
-    ]
+    private let actions:
+        [(icon: String, color: Color, title: String, type: QuickActionType)] = [
+            ("book.closed.fill", .green, "Grammar", .grammar),
+            ("chart.bar.fill", .purple, "Progress", .myScores),
+            ("lightbulb.fill", .yellow, "Tips", .tips),
+        ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -229,7 +263,9 @@ struct SecondaryActionsRow: View {
 
             HStack(spacing: 12) {
                 ForEach(actions, id: \.title) { action in
-                    Button { onSelect(action.type) } label: {
+                    Button {
+                        onSelect(action.type)
+                    } label: {
                         VStack(spacing: 8) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 12)
@@ -247,7 +283,12 @@ struct SecondaryActionsRow: View {
                         .padding(.vertical, 14)
                         .background(Color(.systemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+                        .shadow(
+                            color: .black.opacity(0.05),
+                            radius: 4,
+                            x: 0,
+                            y: 2
+                        )
                     }
                     .buttonStyle(.plain)
                 }
@@ -261,8 +302,8 @@ struct SecondaryActionsRow: View {
 enum QuickActionType: String, Identifiable {
     case practice = "Practice"
     case myScores = "My Scores"
-    case grammar  = "Grammar"
-    case tips     = "Tips"
+    case grammar = "Grammar"
+    case tips = "Tips"
 
     var id: String { rawValue }
 }
@@ -323,9 +364,9 @@ struct ActivityRow: View {
     private var scoreColor: Color {
         guard let score = submission.score else { return .secondary }
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 
@@ -333,7 +374,7 @@ struct ActivityRow: View {
         switch question?.taskType {
         case "task1": return "Task 1"
         case "task2": return "Task 2"
-        default:      return "Essay"
+        default: return "Essay"
         }
     }
 
@@ -343,10 +384,10 @@ struct ActivityRow: View {
 
     private var difficultyColor: Color {
         switch question?.difficulty.lowercased() {
-        case "easy":   return .green
+        case "easy": return .green
         case "medium": return .orange
-        case "hard":   return .red
-        default:       return .secondary
+        case "hard": return .red
+        default: return .secondary
         }
     }
 
@@ -367,7 +408,10 @@ struct ActivityRow: View {
                     BadgeView(text: taskBadgeText, color: taskBadgeColor)
 
                     if let difficulty = question?.difficulty {
-                        BadgeView(text: difficulty.capitalized, color: difficultyColor)
+                        BadgeView(
+                            text: difficulty.capitalized,
+                            color: difficultyColor
+                        )
                     }
 
                     Image(systemName: "clock")
