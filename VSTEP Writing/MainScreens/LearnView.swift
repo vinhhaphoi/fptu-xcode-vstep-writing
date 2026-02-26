@@ -343,7 +343,7 @@ private struct QuestionRow: View {
         ) {
             HStack(spacing: 15) {
                 Text(String(format: "%02d", number))
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(
                         isCompleted ? .green : Color(.tertiaryLabel)
                     )
@@ -390,7 +390,7 @@ private struct QuestionRow: View {
                     .fill(Color.orange)
                     .frame(width: 6, height: 6)
                 Text("Pending")
-                    .font(.caption)
+                    .font(.callout)
                     .foregroundStyle(.orange)
             }
         }
