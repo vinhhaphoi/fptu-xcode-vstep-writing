@@ -1,5 +1,4 @@
 import FirebaseAuth
-// HomeView.swift
 import SwiftUI
 
 // MARK: - HomeView
@@ -10,7 +9,12 @@ struct HomeView: View {
     @State private var recentSubmissions: [UserSubmission] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var selectedAction: QuickActionType?
+
+    // Navigation destinations
+    @State private var navigateToGrammar = false
+    @State private var navigateToScore = false
+    @State private var navigateToTips = false
+    @State private var navigateToPractice = false
 
     private var displayName: String {
         let user = Auth.auth().currentUser
@@ -28,10 +32,9 @@ struct HomeView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                HomeGreetingSection(
-                    displayName: displayName,
-                    questionsAvailable: firebaseService.questions.count
-                )
+                // Greeting + Start Writing sát nhau
+                HomeGreetingSection(displayName: displayName)
+                PrimaryActionCard { navigateToPractice = true }
 
                 if isLoading {
                     LoadingView()
@@ -40,19 +43,13 @@ struct HomeView: View {
                         Task { await loadData() }
                     }
                 } else {
-                    StatsRowSection(
-                        totalSubmissions: recentSubmissions.count,
-                        averageScore: averageScore
-                    )
-
-                    PrimaryActionCard { selectedAction = .practice }
-
-                    SecondaryActionsRow { selectedAction = $0 }
-
                     RecentActivitySection(
                         submissions: recentSubmissions,
-                        questionMap: firebaseService.questionMap
+                        questionMap: firebaseService.questionMap,
+                        onScoreViewTap: { navigateToScore = true }
                     )
+
+                    BlogSection()
                 }
 
                 Spacer(minLength: 50)
@@ -65,15 +62,12 @@ struct HomeView: View {
         .toolbar { ToolBarItems }
         .refreshable { await loadData() }
         .task { await loadData() }
-        // Single navigationDestination at top level to avoid navigation stack conflicts
-        .navigationDestination(item: $selectedAction) { actionType in
-            switch actionType {
-            case .practice: LearnView()
-            case .myScores: ScoreView()
-            case .grammar: GrammarView()
-            case .tips: TipsView()
-            }
+        .navigationDestination(isPresented: $navigateToPractice) { LearnView() }
+        .navigationDestination(isPresented: $navigateToGrammar) {
+            GrammarView()
         }
+        .navigationDestination(isPresented: $navigateToScore) { ScoreView() }
+        .navigationDestination(isPresented: $navigateToTips) { TipsView() }
     }
 
     private func loadData() async {
@@ -97,26 +91,38 @@ struct HomeView: View {
     @ToolbarContentBuilder
     private var ToolBarItems: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            Button("Grammar", systemImage: "text.book.closed") {
-                // Button action here
+            Button {
+                navigateToGrammar = true
+            } label: {
+                Image(systemName: "text.book.closed")
             }
             .tint(.green)
         }
-        
-        ToolbarSpacer(.fixed, placement: .topBarTrailing)
-        
-        ToolbarItem(placement: .topBarTrailing) {
-            Button("AvgScore", systemImage: "star") {
-                // Button action here
-            }
-            .tint(.orange)
-        }
-        
+
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
 
         ToolbarItem(placement: .topBarTrailing) {
-            Button("Tips", systemImage: "lightbulb") {
-                // Button action here
+            Button {
+                navigateToScore = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "star")
+                    if let avg = averageScore {
+                        Text(String(format: "%.1f", avg))
+                            .font(.caption.bold())
+                    }
+                }
+            }
+            .tint(.orange)
+        }
+
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                navigateToTips = true
+            } label: {
+                Image(systemName: "lightbulb")
             }
             .tint(.yellow)
         }
@@ -126,80 +132,18 @@ struct HomeView: View {
 // MARK: - Greeting Header
 struct HomeGreetingSection: View {
     let displayName: String
-    let questionsAvailable: Int
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Hello, \(displayName)!")
                 .font(.title2.bold())
                 .foregroundStyle(.primary)
-
-            Text(
-                questionsAvailable > 0
-                    ? "\(questionsAvailable) questions ready for you"
-                    : "Keep practising your writing"
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            Text("Ready to practise today?")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
-    }
-}
-
-// MARK: - Stats Row
-struct StatsRowSection: View {
-    let totalSubmissions: Int
-    let averageScore: Double?
-
-    var body: some View {
-        HStack(spacing: 12) {
-            StatPill(
-                icon: "doc.text.fill",
-                iconColor: .blue,
-                value: "\(totalSubmissions)",
-                label: "Essays"
-            )
-            StatPill(
-                icon: "star.fill",
-                iconColor: .yellow,
-                value: averageScore.map { String(format: "%.1f", $0) } ?? "-",
-                label: "Avg Score"
-            )
-            StatPill(
-                icon: "flame.fill",
-                iconColor: .orange,
-                value: "-",
-                label: "Streak"
-            )
-        }
-        .padding(.horizontal)
-    }
-}
-
-struct StatPill: View {
-    let icon: String
-    let iconColor: Color
-    let value: String
-    let label: String
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.headline)
-                .foregroundStyle(iconColor)
-            Text(value)
-                .font(.title3.bold().monospacedDigit())
-                .foregroundStyle(.primary)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 }
 
@@ -214,8 +158,7 @@ struct PrimaryActionCard: View {
                     Label("Start Writing", systemImage: "pencil.and.outline")
                         .font(.title3.bold())
                         .foregroundStyle(.white)
-
-                    Text("Practise VSTEP Task 1 & Task 2 essays")
+                    Text("Practise VSTEP writing essays")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.85))
                         .multilineTextAlignment(.leading)
@@ -244,79 +187,26 @@ struct PrimaryActionCard: View {
     }
 }
 
-// MARK: - Secondary Actions Row
-struct SecondaryActionsRow: View {
-    let onSelect: (QuickActionType) -> Void
-
-    private let actions:
-        [(icon: String, color: Color, title: String, type: QuickActionType)] = [
-            ("book.closed.fill", .green, "Grammar", .grammar),
-            ("chart.bar.fill", .purple, "Progress", .myScores),
-            ("lightbulb.fill", .yellow, "Tips", .tips),
-        ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Explore")
-                .font(.headline)
-                .padding(.horizontal)
-
-            HStack(spacing: 12) {
-                ForEach(actions, id: \.title) { action in
-                    Button {
-                        onSelect(action.type)
-                    } label: {
-                        VStack(spacing: 8) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(action.color.opacity(0.12))
-                                    .frame(width: 52, height: 52)
-                                Image(systemName: action.icon)
-                                    .font(.title3)
-                                    .foregroundStyle(action.color)
-                            }
-                            Text(action.title)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.primary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(.systemBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .shadow(
-                            color: .black.opacity(0.05),
-                            radius: 4,
-                            x: 0,
-                            y: 2
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal)
-        }
-    }
-}
-
-// MARK: - Quick Action Type
-enum QuickActionType: String, Identifiable {
-    case practice = "Practice"
-    case myScores = "My Scores"
-    case grammar = "Grammar"
-    case tips = "Tips"
-
-    var id: String { rawValue }
-}
-
 // MARK: - Recent Activity Section
 struct RecentActivitySection: View {
     let submissions: [UserSubmission]
     let questionMap: [String: VSTEPQuestion]
+    let onScoreViewTap: () -> Void
 
-    // Keep only the most recent submission per question, assuming descending sort from Firestore
-    private var uniqueSubmissions: [UserSubmission] {
-        var seen = Set<String>()
-        return submissions.filter { seen.insert($0.questionId).inserted }
+    /// Group submissions by questionId, sorted: newest group first, max 2 groups shown
+    private var groupedSubmissions:
+        [(question: VSTEPQuestion?, entries: [UserSubmission])]
+    {
+        // Group by questionId, preserving order of first appearance (submissions already desc)
+        var order: [String] = []
+        var dict: [String: [UserSubmission]] = [:]
+        for s in submissions {
+            if dict[s.questionId] == nil { order.append(s.questionId) }
+            dict[s.questionId, default: []].append(s)
+        }
+        return order.prefix(2).map { id in
+            (question: questionMap[id], entries: dict[id] ?? [])
+        }
     }
 
     var body: some View {
@@ -325,24 +215,23 @@ struct RecentActivitySection: View {
                 Text("Recent Activity")
                     .font(.headline)
                 Spacer()
-                if !uniqueSubmissions.isEmpty {
-                    NavigationLink(destination: ScoreView()) {
-                        Text("See All")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                    }
+                if !submissions.isEmpty {
+                    Button("See All", action: onScoreViewTap)
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
                 }
             }
             .padding(.horizontal)
 
-            if uniqueSubmissions.isEmpty {
+            if groupedSubmissions.isEmpty {
                 EmptyActivityView()
             } else {
                 VStack(spacing: 10) {
-                    ForEach(uniqueSubmissions.prefix(5)) { submission in
-                        ActivityRow(
-                            submission: submission,
-                            question: questionMap[submission.questionId]
+                    ForEach(groupedSubmissions, id: \.entries.first?.id) {
+                        group in
+                        ActivityGroupRow(
+                            question: group.question,
+                            entries: group.entries
                         )
                     }
                 }
@@ -351,24 +240,12 @@ struct RecentActivitySection: View {
     }
 }
 
-// MARK: - Activity Row
-struct ActivityRow: View {
-    let submission: UserSubmission
+// MARK: - Activity Group Row (stacked submissions for same question)
+struct ActivityGroupRow: View {
     let question: VSTEPQuestion?
+    let entries: [UserSubmission]
 
-    private var scoreText: String? {
-        guard let score = submission.score else { return nil }
-        return String(format: "%.1f", score)
-    }
-
-    private var scoreColor: Color {
-        guard let score = submission.score else { return .secondary }
-        switch score {
-        case 8...: return .green
-        case 6..<8: return .orange
-        default: return .red
-        }
-    }
+    private var latest: UserSubmission? { entries.first }
 
     private var taskBadgeText: String {
         switch question?.taskType {
@@ -392,61 +269,204 @@ struct ActivityRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            // Left accent bar distinguishes task type at a glance
-            RoundedRectangle(cornerRadius: 3)
-                .fill(taskBadgeColor)
-                .frame(width: 4, height: 64)
+        VStack(spacing: 0) {
+            // Latest submission row
+            if let sub = latest {
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(taskBadgeColor)
+                        .frame(width: 4, height: 56)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(question?.title ?? submission.questionId.uppercased())
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(question?.title ?? sub.questionId.uppercased())
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    BadgeView(text: taskBadgeText, color: taskBadgeColor)
-
-                    if let difficulty = question?.difficulty {
-                        BadgeView(
-                            text: difficulty.capitalized,
-                            color: difficultyColor
-                        )
+                        HStack(spacing: 6) {
+                            BadgeView(
+                                text: taskBadgeText,
+                                color: taskBadgeColor
+                            )
+                            if let diff = question?.difficulty {
+                                BadgeView(
+                                    text: diff.capitalized,
+                                    color: difficultyColor
+                                )
+                            }
+//                            Image(systemName: "clock")
+//                                .font(.caption2)
+//                                .foregroundColor(.secondary)
+//                            Text(sub.submittedAt, style: .relative)
+//                                .font(.caption)
+//                                .foregroundColor(.secondary)
+                        }
                     }
 
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                    Spacer(minLength: 8)
 
-                    Text(submission.submittedAt, style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Score hoặc status
+                    if let score = sub.score {
+                        VStack(spacing: 1) {
+                            Text(String(format: "%.1f", score))
+                                .font(.title3.bold().monospacedDigit())
+                                .foregroundColor(scoreColor(score))
+                            Text("/ 10")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(minWidth: 48, alignment: .trailing)
+                    } else {
+                        StatusBadgeView(status: sub.status)
+                            .frame(minWidth: 48, alignment: .trailing)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
 
-            Spacer(minLength: 8)
-
-            // Show numeric score when available, otherwise display status icon
-            VStack(spacing: 2) {
-                if let scoreText = scoreText {
-                    Text(scoreText)
-                        .font(.title3.bold().monospacedDigit())
-                        .foregroundColor(scoreColor)
-                    Text("/ 10")
+            // Nếu có nhiều hơn 1 lần submit, hiển thị dòng count nhỏ
+            if entries.count > 1 {
+                Divider().padding(.leading, 34)
+                HStack {
+                    Image(systemName: "arrow.triangle.branch")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                } else {
-                    StatusBadgeView(status: submission.status)
+                    Text(
+                        "\(entries.count - 1) earlier attempt\(entries.count > 2 ? "s" : "")"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    Spacer()
+                    // Hiển thị score cao nhất nếu có
+                    if let best = entries.compactMap(\.score).max() {
+                        Text("Best: \(String(format: "%.1f", best))")
+                            .font(.caption.bold())
+                            .foregroundColor(.green)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .frame(minWidth: 52, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
+    }
+
+    private func scoreColor(_ score: Double) -> Color {
+        switch score {
+        case 8...: return .green
+        case 6..<8: return .orange
+        default: return .red
+        }
+    }
+}
+
+// MARK: - Blog Section
+struct BlogPost: Identifiable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let category: String
+    let categoryColor: Color
+    let systemImage: String
+    let imageColor: Color
+}
+
+struct BlogSection: View {
+    // Placeholder data — thay bằng Firebase fetch thực tế sau
+    private let blogs: [BlogPost] = [
+        BlogPost(
+            id: "1",
+            title: "How to Score 8.0 in Task 2",
+            subtitle: "Master argument structure and cohesion",
+            category: "Strategy",
+            categoryColor: .blue,
+            systemImage: "doc.text.magnifyingglass",
+            imageColor: .blue
+        ),
+        BlogPost(
+            id: "2",
+            title: "Common Grammar Mistakes",
+            subtitle: "Top 10 errors VSTEP candidates make",
+            category: "Grammar",
+            categoryColor: .green,
+            systemImage: "checkmark.seal",
+            imageColor: .green
+        ),
+        BlogPost(
+            id: "3",
+            title: "Task 1 Vocabulary Boost",
+            subtitle: "Essential phrases for letter writing",
+            category: "Vocabulary",
+            categoryColor: .purple,
+            systemImage: "text.quote",
+            imageColor: .purple
+        ),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Blog")
+                    .font(.headline)
+                Spacer()
+                Button("View All") {
+                    // Navigate to full blog list
+                }
+                .font(.subheadline)
+                .foregroundColor(.blue)
+            }
+            .padding(.horizontal)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(blogs) { post in
+                        BlogCard(post: post)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+struct BlogCard: View {
+    let post: BlogPost
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Icon area
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(post.imageColor.opacity(0.12))
+                    .frame(height: 80)
+                Image(systemName: post.systemImage)
+                    .font(.system(size: 32))
+                    .foregroundStyle(post.imageColor)
+            }
+
+            BadgeView(text: post.category, color: post.categoryColor)
+
+            Text(post.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(post.subtitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+        }
+        .padding(14)
+        .frame(width: 180)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.06), radius: 5, x: 0, y: 2)
     }
 }
 
@@ -541,6 +561,16 @@ struct EmptyActivityView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .padding(.horizontal)
     }
+}
+
+// MARK: - Quick Action Type
+enum QuickActionType: String, Identifiable {
+    case practice = "Practice"
+    case myScores = "My Scores"
+    case grammar = "Grammar"
+    case tips = "Tips"
+
+    var id: String { rawValue }
 }
 
 // MARK: - Grammar Placeholder
