@@ -340,8 +340,11 @@ struct GradingHistorySheet: View {
             .navigationTitle("Grading History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .tint(.red)
                 }
             }
         }
