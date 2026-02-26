@@ -532,10 +532,10 @@ struct StatusBadgeView: View {
         VStack(spacing: 3) {
             Image(systemName: status.icon)
                 .font(.subheadline)
-                .foregroundColor(.primary)
+                .foregroundColor(.blue)
             Text(status.displayText)
                 .font(.caption2.weight(.medium))
-                .foregroundColor(.primary)
+                .foregroundColor(.blue)
         }
     }
 }

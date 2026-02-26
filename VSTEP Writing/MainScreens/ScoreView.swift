@@ -6,12 +6,12 @@ struct QuestionAttemptGroup: Identifiable {
     var id: String { questionId }
     let questionId: String
     let question: VSTEPQuestion?
-    let attempts: [UserSubmission]          // sorted desc — newest first
+    let attempts: [UserSubmission]
 
-    var latestAttempt: UserSubmission       { attempts[0] }
-    var previousAttempts: [UserSubmission]  { Array(attempts.dropFirst()) }
-    var attemptCount: Int                   { attempts.count }
-    var bestScore: Double?                  { attempts.compactMap(\.score).max() }
+    var latestAttempt: UserSubmission      { attempts[0] }
+    var previousAttempts: [UserSubmission] { Array(attempts.dropFirst()) }
+    var attemptCount: Int                  { attempts.count }
+    var bestScore: Double?                 { attempts.compactMap(\.score).max() }
 }
 
 // MARK: - ScoreView
@@ -21,23 +21,18 @@ struct ScoreView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
-    // ── Grouped & sorted ───────────────────────────────────────
     private var groupedByQuestion: [QuestionAttemptGroup] {
         Dictionary(grouping: submissions) { $0.questionId }
             .map { questionId, attempts in
                 QuestionAttemptGroup(
                     questionId: questionId,
                     question: firebaseService.questionMap[questionId],
-                    attempts: attempts.sorted {
-                        $0.submittedAt > $1.submittedAt   // newest first
-                    }
+                    attempts: attempts.sorted { $0.submittedAt > $1.submittedAt }
                 )
             }
-            // Group có submission mới nhất lên đầu
             .sorted { $0.latestAttempt.submittedAt > $1.latestAttempt.submittedAt }
     }
 
-    // ── Stats ──────────────────────────────────────────────────
     private var gradedSubmissions: [UserSubmission] {
         submissions.filter { $0.score != nil }
     }
@@ -63,7 +58,6 @@ struct ScoreView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-
                 ScoreHeaderView(
                     averageScore: averageScore,
                     totalSubmissions: submissions.count,
@@ -151,33 +145,32 @@ struct QuestionAttemptCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-
-            // ── Latest Attempt Row (luôn hiển thị) ─────────────
+            // Latest attempt row — always visible
             HStack(spacing: 14) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(taskColor)
+                // Accent indicator — glass tinted capsule bar
+                Color.clear
                     .frame(width: 4, height: 68)
+                    .glassEffect(.regular.tint(taskColor), in: Capsule())
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(group.question?.title
-                         ?? group.questionId.uppercased())
+                    Text(group.question?.title ?? group.questionId.uppercased())
                         .font(.headline)
                         .lineLimit(2)
 
                     HStack(spacing: 8) {
-                        // Task badge
                         BadgeLabel(text: taskBadgeText, color: taskColor)
+//
+//                        if group.attemptCount > 1 {
+//                            BadgeLabel(
+//                                text: "\(group.attemptCount) attempts",
+//                                color: .secondary
+//                            )
+//                        }
 
-                        // Attempt count — chỉ hiện nếu > 1
-                        if group.attemptCount > 1 {
-                            BadgeLabel(
-                                text: "\(group.attemptCount) attempts",
-                                color: .secondary
-                            )
-                        }
-
-                        // Date của lần mới nhất
-                        Text(group.latestAttempt.submittedAt, style: .date)
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(group.latestAttempt.submittedAt, style: .relative)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -187,10 +180,8 @@ struct QuestionAttemptCard: View {
 
                 AttemptScoreView(submission: group.latestAttempt)
 
-                // Chevron expand — chỉ khi có lần thử trước
                 if !group.previousAttempts.isEmpty {
-                    Image(systemName: isExpanded
-                          ? "chevron.up" : "chevron.down")
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondary)
                         .padding(.leading, 4)
@@ -206,16 +197,17 @@ struct QuestionAttemptCard: View {
                 }
             }
 
-            // ── Previous Attempts (expandable stack) ───────────
+            // Previous attempts expandable stack
             if isExpanded {
                 Divider().padding(.horizontal, 16)
 
                 ForEach(
-                    Array(group.previousAttempts.enumerated()),
+                    Array(group.previousAttempts.reversed().enumerated()),
                     id: \.element.id
                 ) { index, attempt in
+                    // index 0 = oldest = #1, ascending to #(attemptCount-1)
                     PreviousAttemptRow(
-                        attemptNumber: group.attemptCount - 1 - index,
+                        attemptNumber: index + 1,
                         submission: attempt
                     )
 
@@ -225,17 +217,12 @@ struct QuestionAttemptCard: View {
                 }
             }
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.gray.opacity(0.15), lineWidth: 1)
-        )
+        .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }
 }
 
-// MARK: - Previous Attempt Row (compact)
+// MARK: - Previous Attempt Row
 struct PreviousAttemptRow: View {
     let attemptNumber: Int
     let submission: UserSubmission
@@ -247,9 +234,20 @@ struct PreviousAttemptRow: View {
                 .foregroundColor(.secondary)
                 .frame(width: 32, alignment: .center)
 
-            Text(submission.submittedAt, style: .date)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(submission.submittedAt, style: .date)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(submission.submittedAt, style: .relative)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
 
             Spacer()
 
@@ -257,7 +255,7 @@ struct PreviousAttemptRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color(.systemGroupedBackground))
+        .background(Color(.systemGroupedBackground).opacity(0.5))
     }
 }
 
@@ -322,7 +320,7 @@ struct BadgeLabel: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(color.opacity(0.12))
-            .cornerRadius(5)
+            .clipShape(.rect(cornerRadius: 5))
     }
 }
 
@@ -361,23 +359,30 @@ struct ScoreHeaderView: View {
 
             if totalSubmissions > 0 {
                 HStack(spacing: 28) {
-                    StatChip(icon: "doc.text.fill",
-                             value: "\(totalSubmissions)", label: "Total")
-                    StatChip(icon: "1.circle.fill",
-                             value: "\(task1Count)", label: "Task 1",
-                             color: .blue)
-                    StatChip(icon: "2.circle.fill",
-                             value: "\(task2Count)", label: "Task 2",
-                             color: .purple)
+                    StatChip(
+                        icon: "doc.text.fill",
+                        value: "\(totalSubmissions)",
+                        label: "Total"
+                    )
+                    StatChip(
+                        icon: "1.circle.fill",
+                        value: "\(task1Count)",
+                        label: "Task 1",
+                        color: .blue
+                    )
+                    StatChip(
+                        icon: "2.circle.fill",
+                        value: "\(task2Count)",
+                        label: "Task 2",
+                        color: .purple
+                    )
                 }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
         .padding(.horizontal)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+        .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }
 }
