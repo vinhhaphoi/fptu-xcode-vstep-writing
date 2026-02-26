@@ -13,42 +13,43 @@ struct TabBarView: View {
 
     var body: some View {
         TabView {
-            // Home Tab
-            Tab("Home", systemImage: "house") {
-                NavigationStack {
-                    HomeView()
-                }
+            Tab {
+                NavigationStack { HomeView() }
+            } label: {
+                Label("Home", systemImage: "house")
+                    .environment(\.symbolVariants, .none)
             }
 
-            // Learn Tab
-            Tab("Learn", systemImage: "graduationcap") {
-                NavigationStack {
-                    LearnView()
-                }
+            Tab {
+                NavigationStack { LearnView() }
+            } label: {
+                Label("Learn", systemImage: "books.vertical")
+                    .environment(\.symbolVariants, .none)
             }
 
-            // Score Tab
-            Tab("Score", systemImage: "chart.bar.xaxis.ascending") {
-                NavigationStack {
-                    ScoreView()
-                }
+            Tab {
+                NavigationStack { ScoreView() }
+            } label: {
+                Label("Score", systemImage: "checkmark.seal.text.page")
+                    .environment(\.symbolVariants, .none)
             }
 
-            // Profile Tab
-            Tab("Profile", systemImage: "person") {
-                NavigationStack {
-                    ProfileView()
-                }
+            Tab {
+                NavigationStack { ProfileView() }
+            } label: {
+                Label("Profile", systemImage: "person")
+                    .environment(\.symbolVariants, .none)
             }
 
-            // Search Tab
-            Tab("Notifications", systemImage: "bell", role: .search) {
-                NavigationStack {
-                    SearchView()
-                }
+            Tab(role: .search) {
+                NavigationStack { SearchView() }
+            } label: {
+                Label("Notifications", systemImage: "bell")
+                    .environment(\.symbolVariants, .none)
             }
             .badge(notificationCount > 0 ? notificationCount : 0)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
     }
+
 }

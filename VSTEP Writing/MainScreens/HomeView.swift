@@ -133,7 +133,7 @@ struct HomeGreetingSection: View {
             Text("Hello, \(displayName)!")
                 .font(.title2.bold())
                 .foregroundStyle(.primary)
-            Text("Ready to practise today?")
+            Text("Ready to practice today?")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -164,23 +164,14 @@ struct PrimaryActionCard: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
             .padding(20)
-            .background(
-                LinearGradient(
-                    colors: [
-                        .blue,
-                        Color(hue: 0.65, saturation: 0.8, brightness: 0.85),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .blue.opacity(0.3), radius: 10, x: 0, y: 5)
+            // ← REPLACED LinearGradient + clipShape + shadow with glassEffect
+            .glassEffect(.regular.tint(.blue).interactive(), in: .rect(cornerRadius: 18))
         }
         .buttonStyle(.plain)
         .padding(.horizontal)
     }
 }
+
 
 // MARK: - Recent Activity Section
 struct RecentActivitySection: View {
@@ -189,7 +180,6 @@ struct RecentActivitySection: View {
     let onScoreViewTap: () -> Void
     let onLearnViewTap: () -> Void
 
-    /// Max 2 groups, each group = all submissions sharing same questionId (desc order)
     private var groupedSubmissions:
         [(
             questionId: String, question: VSTEPQuestion?,
@@ -237,10 +227,6 @@ struct RecentActivitySection: View {
 }
 
 // MARK: - Activity Stack Card
-/// Displays a group of submissions sharing the same questionId.
-/// - Top layer: latest entry (always visible)
-/// - Expanded: up to 3 entries total (including the top layer)
-/// - "Show all" appears when total entries exceed 3
 struct ActivityStackCard: View {
     let question: VSTEPQuestion?
     let entries: [UserSubmission]
@@ -269,17 +255,15 @@ struct ActivityStackCard: View {
         }
     }
 
-    /// Visible entries: collapsed → 1 only, expanded → up to 3
     private var visibleEntries: [UserSubmission] {
         isExpanded ? Array(entries.prefix(3)) : Array(entries.prefix(1))
     }
 
     private var hasMore: Bool { entries.count > 3 }
-    private var hiddenCount: Int { max(0, entries.count - 3) }
 
     var body: some View {
         VStack(spacing: 0) {
-            // ── Rows ──
+            // Entry rows
             ForEach(Array(visibleEntries.enumerated()), id: \.element.id) {
                 index,
                 sub in
@@ -293,12 +277,11 @@ struct ActivityStackCard: View {
                 }
             }
 
-            // ── Expand / Collapse / Show All controls ──
+            // Expand / Collapse / Show All controls
             if entries.count > 1 {
                 Divider().padding(.leading, 56)
 
                 HStack(spacing: 0) {
-                    // Toggle expand/collapse (show up to 3)
                     Button {
                         withAnimation(.easeInOut(duration: 0.22)) {
                             isExpanded.toggle()
@@ -325,10 +308,9 @@ struct ActivityStackCard: View {
 
                     Spacer()
 
-                    // Show All — only appear when have stack > 3
                     if isExpanded && hasMore {
                         Button {
-                            onTap()  // navigate to ScoreView/LearnView
+                            onTap()
                         } label: {
                             Text("Show all \(entries.count)")
                                 .font(.caption.bold())
@@ -339,7 +321,6 @@ struct ActivityStackCard: View {
                         .padding(.vertical, 10)
                     }
 
-                    // Best score badge
                     if let best = entries.compactMap(\.score).max() {
                         HStack(spacing: 3) {
                             Image(systemName: "trophy.fill")
@@ -355,22 +336,19 @@ struct ActivityStackCard: View {
                 }
             }
         }
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+        // ← REPLACED .background + .clipShape + .shadow with .glassEffect
+        .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }
 
     @ViewBuilder
     private func entryRow(sub: UserSubmission, isLatest: Bool) -> some View {
         HStack(spacing: 14) {
-            // Accent bar
             RoundedRectangle(cornerRadius: 3)
                 .fill(isLatest ? taskBadgeColor : taskBadgeColor.opacity(0.4))
                 .frame(width: 4, height: 52)
 
             VStack(alignment: .leading, spacing: 5) {
-                // Title appear in the first row and not duplicate
                 if isLatest {
                     Text(question?.title ?? sub.questionId.uppercased())
                         .font(.subheadline.weight(.semibold))
@@ -388,7 +366,6 @@ struct ActivityStackCard: View {
                             )
                         }
                     } else {
-                        // Other row: appear "Attempt #N"
                         Text("Earlier attempt")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -405,7 +382,6 @@ struct ActivityStackCard: View {
 
             Spacer(minLength: 8)
 
-            // Score or status
             if let score = sub.score {
                 VStack(spacing: 1) {
                     Text(String(format: "%.1f", score))
@@ -527,9 +503,8 @@ struct BlogCard: View {
         }
         .padding(14)
         .frame(width: 180)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.06), radius: 5, x: 0, y: 2)
+        // ← REPLACED .background + .clipShape + .shadow with .glassEffect
+        .glassEffect(in: .rect(cornerRadius: 16))
     }
 }
 
@@ -596,8 +571,8 @@ struct ErrorBannerView: View {
                 .font(.subheadline.weight(.semibold))
         }
         .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        // ← REPLACED .background + .clipShape with .glassEffect
+        .glassEffect(in: .rect(cornerRadius: 12))
         .padding(.horizontal)
     }
 }
@@ -620,8 +595,8 @@ struct EmptyActivityView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // ← REPLACED .background + .clipShape with .glassEffect
+        .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }
 }
