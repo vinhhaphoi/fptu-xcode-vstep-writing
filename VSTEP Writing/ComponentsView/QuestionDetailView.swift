@@ -8,11 +8,21 @@ struct QuestionDetailView: View {
     var questionNumber: Int = 0
     var latestSubmission: UserSubmission? = nil
     var submissionHistory: [UserSubmission] = []
+    var onSubmit: ((String) -> Void)? = nil
+    var onRefresh: (() async -> Void)? = nil
 
     @State private var showHistorySheet = false
+    @State private var essayText = ""
+    @State private var showSubmitConfirm = false
+    @State private var isSubmitting = false
 
     private var taskColor: Color { question.isTask1 ? .blue : .purple }
     private var hasHistory: Bool { !submissionHistory.isEmpty }
+    private var wordCount: Int {
+        essayText.split(separator: " ").filter { !$0.isEmpty }.count
+    }
+//    private var minWords: Int { question.isTask1 ? 150 : 250 }
+    private var minWords: Int { 10 }
 
     var body: some View {
         ScrollView {
@@ -25,15 +35,18 @@ struct QuestionDetailView: View {
                     )
                 } else {
                     promptContent
+                    writingSection
                 }
                 Spacer(minLength: 40)
             }
             .padding()
         }
+        .refreshable {
+            await onRefresh?()
+        }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Question \(questionNumber)")
-        .navigationBarTitleDisplayMode(.inline)
-        // History button only shown when there is at least one submission
+        .toolbarTitleDisplayMode(.inline)
         .toolbar {
             if hasHistory {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -48,13 +61,25 @@ struct QuestionDetailView: View {
         .sheet(isPresented: $showHistorySheet) {
             GradingHistorySheet(history: submissionHistory)
         }
+        .confirmationDialog(
+            "Submit your essay?",
+            isPresented: $showSubmitConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Submit") {
+                isSubmitting = true
+                onSubmit?(essayText)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Once submitted, you cannot edit this attempt. Make sure your essay is complete.")
+        }
     }
 
-    // MARK: - Prompt Content (question not yet attempted)
+    // MARK: - Prompt Content
 
     private var promptContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(question.isTask1 ? "Task 1" : "Task 2")
@@ -90,8 +115,6 @@ struct QuestionDetailView: View {
 
     var promptSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-
-            // Task 1: situation + "Write a letter to..." task line
             if let situation = question.situation {
                 Text(situation)
                     .font(.body)
@@ -106,7 +129,6 @@ struct QuestionDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Task 2: topic + instruction
             if let topic = question.topic {
                 Text(topic)
                     .font(.body)
@@ -121,7 +143,6 @@ struct QuestionDetailView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Task 1: requirements bullet list
             if let requirements = question.requirements, !requirements.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
@@ -143,7 +164,6 @@ struct QuestionDetailView: View {
                 }
             }
 
-            // Task 2: suggested structure (optional, collapsed under a disclosure)
             if let structure = question.suggestedStructure, !structure.isEmpty {
                 Divider()
                 DisclosureGroup {
@@ -169,7 +189,106 @@ struct QuestionDetailView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)  // fix card width to always fill container
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .glassEffect(in: .rect(cornerRadius: 16))
+    }
+
+    // MARK: - Writing Input Section
+
+    private var writingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+
+            // Disclaimer banner
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.subheadline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Beta feature")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.orange)
+                    Text("In-app writing may have limited experience. For best results, write offline and paste your essay here.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            )
+
+            // Header row
+            HStack {
+                Text("Your Essay")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(wordCount) / \(minWords) words min")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(wordCount >= minWords ? taskColor : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .glassEffect(in: .rect(cornerRadius: 8))
+            }
+
+            // TextEditor with placeholder
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $essayText)
+                    .frame(minHeight: 220)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+
+                if essayText.isEmpty {
+                    Text("Start writing your essay here…")
+                        .font(.body)
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .padding(.top, 8)
+                        .padding(.leading, 4)
+                        .allowsHitTesting(false)
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            // Submit button
+            Button {
+                showSubmitConfirm = true
+            } label: {
+                Group {
+                    if isSubmitting {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.primary)
+                            Text("Submitting…")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                    } else {
+                        Label("Submit Essay", systemImage: "paperplane.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                }
+            }
+            .glassEffect()
+            .tint(.primary)
+            .disabled(wordCount < minWords || isSubmitting)
+
+            // Hint when disabled
+            if wordCount < minWords {
+                Text("Write at least \(minWords - wordCount) more word\(minWords - wordCount == 1 ? "" : "s") to submit.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16))
     }
@@ -184,22 +303,14 @@ private struct SubmissionReviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-
-            // Status tracker
             SubmissionStatusTracker(status: submission.status)
-
-            // Score + feedback card
             latestResultCard
-
-            // Prompt
             QuestionDetailView(
                 question: question,
                 questionNumber: 0,
                 latestSubmission: nil,
                 submissionHistory: []
             ).promptSection
-
-            // Essay
             essaySection
         }
     }
@@ -209,7 +320,6 @@ private struct SubmissionReviewView: View {
     private var latestResultCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let score = submission.score {
-                // Graded
                 HStack(alignment: .lastTextBaseline, spacing: 6) {
                     Text(String(format: "%.1f", score))
                         .font(.system(size: 44, weight: .bold))
@@ -252,7 +362,6 @@ private struct SubmissionReviewView: View {
                         .foregroundColor(.secondary)
                 }
             } else {
-                // Pending
                 HStack(spacing: 14) {
                     ZStack {
                         Circle().fill(Color.orange.opacity(0.15)).frame(width: 44, height: 44)
@@ -319,8 +428,6 @@ private struct SubmissionReviewView: View {
 }
 
 // MARK: - Grading History Sheet
-// Presented as a modal sheet via the toolbar clock button.
-// Shows every attempt in descending order (newest first).
 
 struct GradingHistorySheet: View {
     let history: [UserSubmission]
@@ -338,7 +445,7 @@ struct GradingHistorySheet: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Grading History")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: {
@@ -352,7 +459,6 @@ struct GradingHistorySheet: View {
 }
 
 // MARK: - History Attempt Card
-// Displays all details for a single submission attempt.
 
 private struct HistoryAttemptCard: View {
     let submission: UserSubmission
@@ -360,8 +466,6 @@ private struct HistoryAttemptCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-
-            // Header row: attempt number + status badge
             HStack {
                 Text("Attempt #\(attemptNumber)")
                     .font(.subheadline.weight(.semibold))
@@ -372,7 +476,6 @@ private struct HistoryAttemptCard: View {
 
             Divider()
 
-            // Score row
             HStack(spacing: 6) {
                 Image(systemName: "star.fill")
                     .font(.caption)
@@ -384,7 +487,7 @@ private struct HistoryAttemptCard: View {
                 if let score = submission.score {
                     Text(String(format: "%.1f / 10", score))
                         .font(.subheadline.weight(.bold))
-                        .foregroundColor(scoreColor(submission.score ?? 0))
+                        .foregroundColor(scoreColor(score))
                 } else {
                     Text("Not graded yet")
                         .font(.subheadline)
@@ -393,7 +496,6 @@ private struct HistoryAttemptCard: View {
                 Spacer()
             }
 
-            // Feedback row
             VStack(alignment: .leading, spacing: 6) {
                 Label("Feedback", systemImage: "text.bubble")
                     .font(.caption)
@@ -405,16 +507,17 @@ private struct HistoryAttemptCard: View {
                         .foregroundColor(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text(submission.score != nil
-                         ? "No feedback was provided for this attempt."
-                         : "Feedback will appear here once your essay has been reviewed.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        submission.score != nil
+                            ? "No feedback was provided for this attempt."
+                            : "Feedback will appear here once your essay has been reviewed."
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            // Word count + submitted date
             HStack {
                 Label("\(submission.wordCount) words", systemImage: "text.alignleft")
                     .font(.caption)

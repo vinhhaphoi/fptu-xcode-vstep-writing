@@ -1,7 +1,7 @@
-import Foundation
-import FirebaseFirestore
-import FirebaseAuth
 import Combine
+import FirebaseAuth
+import FirebaseFirestore
+import Foundation
 
 // MARK: - FirebaseService
 @MainActor
@@ -20,7 +20,7 @@ class FirebaseService: ObservableObject {
 
     // MARK: Auth Helpers
     var currentUserId: String? { Auth.auth().currentUser?.uid }
-    var isAuthenticated: Bool  { currentUserId != nil }
+    var isAuthenticated: Bool { currentUserId != nil }
 
     // MARK: - Question Map
     /// Tra cứu O(1): questionId field → VSTEPQuestion
@@ -105,7 +105,9 @@ class FirebaseService: ObservableObject {
             .document("vstep_writing_rubric")
             .getDocument()
 
-        guard snapshot.exists else { throw FirebaseServiceError.documentNotFound }
+        guard snapshot.exists else {
+            throw FirebaseServiceError.documentNotFound
+        }
         rubric = try snapshot.data(as: VSTEPRubric.self)
         print("[FirebaseService] Fetched rubric")
     }
@@ -142,6 +144,25 @@ class FirebaseService: ObservableObject {
     }
 
     // ─────────────────────────────────────────────
+    // MARK: - Submit Essay (called from LearnView)
+    // ─────────────────────────────────────────────
+    func submitEssay(_ submission: UserSubmission) async throws {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        try await db
+            .collection("users").document(userId)
+            .collection("submissions")
+            .addDocument(data: try Firestore.Encoder().encode(submission))
+
+        try await updateUserProgress(questionId: submission.questionId)
+        print(
+            "[FirebaseService] submitEssay — questionId: \(submission.questionId)"
+        )
+    }
+
+    // ─────────────────────────────────────────────
     // MARK: - Fetch User Submissions
     // ─────────────────────────────────────────────
     func fetchUserSubmissions() async throws -> [UserSubmission] {
@@ -149,7 +170,8 @@ class FirebaseService: ObservableObject {
             throw FirebaseServiceError.notAuthenticated
         }
 
-        let snapshot = try await db
+        let snapshot =
+            try await db
             .collection("users").document(userId)
             .collection("submissions")
             .order(by: "submittedAt", descending: true)
@@ -176,9 +198,9 @@ class FirebaseService: ObservableObject {
             .collection("users").document(userId)
             .collection("submissions").document(submissionId)
             .updateData([
-                "score":    score,
+                "score": score,
                 "feedback": feedback,
-                "status":   SubmissionStatus.graded.rawValue
+                "status": SubmissionStatus.graded.rawValue,
             ])
 
         try await recalculateAverageScore(userId: userId)
@@ -221,10 +243,10 @@ class FirebaseService: ObservableObject {
 
     func getStats() -> (total: Int, completed: Int, task1: Int, task2: Int) {
         (
-            total:     questions.count,
+            total: questions.count,
             completed: userProgress?.completedQuestions.count ?? 0,
-            task1:     userProgress?.task1Completed ?? 0,
-            task2:     userProgress?.task2Completed ?? 0
+            task1: userProgress?.task1Completed ?? 0,
+            task2: userProgress?.task2Completed ?? 0
         )
     }
 
@@ -232,7 +254,8 @@ class FirebaseService: ObservableObject {
     // MARK: - Fetch Plan (IAP)
     // ─────────────────────────────────────────────
     func fetchPlan(productID: String) async -> Plan? {
-        let doc = try? await db.collection("plans").document(productID).getDocument()
+        let doc = try? await db.collection("plans").document(productID)
+            .getDocument()
         return try? doc?.data(as: Plan.self)
     }
 
@@ -241,20 +264,24 @@ class FirebaseService: ObservableObject {
     // ─────────────────────────────────────────────
     private func progressRef(userId: String) -> DocumentReference {
         db.collection("users").document(userId)
-          .collection("progress").document("overall")
+            .collection("progress").document("overall")
     }
 
     private func updateUserProgress(questionId: String) async throws {
         guard let userId = currentUserId else { return }
-        try await progressRef(userId: userId).setData([
-            "completedQuestions": FieldValue.arrayUnion([questionId]),
-            "totalSubmissions":   FieldValue.increment(Int64(1)),
-            "lastActivityDate":   FieldValue.serverTimestamp()
-        ], merge: true)
+        try await progressRef(userId: userId).setData(
+            [
+                "completedQuestions": FieldValue.arrayUnion([questionId]),
+                "totalSubmissions": FieldValue.increment(Int64(1)),
+                "lastActivityDate": FieldValue.serverTimestamp(),
+            ],
+            merge: true
+        )
     }
 
     private func recalculateAverageScore(userId: String) async throws {
-        let snapshot = try await db
+        let snapshot =
+            try await db
             .collection("users").document(userId)
             .collection("submissions")
             .whereField("score", isGreaterThan: 0)

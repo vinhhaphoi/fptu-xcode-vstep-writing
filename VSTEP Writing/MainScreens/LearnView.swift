@@ -1,6 +1,8 @@
+// LearnView.swift
 import SwiftUI
 
 // MARK: - LearnView
+
 struct LearnView: View {
     @StateObject private var firebaseService = FirebaseService.shared
     @State private var submittedIds: Set<String> = []
@@ -46,6 +48,7 @@ struct LearnView: View {
     }
 
     // MARK: - Main Content
+
     private var mainContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
@@ -61,7 +64,9 @@ struct LearnView: View {
                         task2Questions: task2Questions,
                         submittedIds: submittedIds,
                         latestSubmissions: latestSubmissions,
-                        allSubmissions: allSubmissions
+                        allSubmissions: allSubmissions,
+                        onSubmit: handleSubmit,
+                        onRefresh: loadData
                     )
                 }
 
@@ -72,7 +77,54 @@ struct LearnView: View {
         .background(Color(.systemGroupedBackground))
     }
 
+    // MARK: - Submit Handler
+
+    private func handleSubmit(question: VSTEPQuestion, essayText: String) {
+        let wordCount =
+            essayText
+            .split(separator: " ")
+            .filter { !$0.isEmpty }
+            .count
+
+        let newSubmission = UserSubmission(
+            questionId: question.questionId,
+            content: essayText,
+            wordCount: wordCount,
+            submittedAt: Date(),
+            score: nil,
+            feedback: nil,
+            status: .submitted
+        )
+
+        // Optimistic update — reflect changes in UI immediately
+        latestSubmissions[question.questionId] = newSubmission
+        allSubmissions[question.questionId, default: []].insert(
+            newSubmission,
+            at: 0
+        )
+        submittedIds.insert(question.questionId)
+
+        Task { [firebaseService] in
+            do {
+                try await firebaseService.submitEssay(newSubmission)
+            } catch {
+                // Rollback on failure
+                await MainActor.run {
+                    latestSubmissions.removeValue(forKey: question.questionId)
+                    allSubmissions[question.questionId]?.removeFirst()
+                    if allSubmissions[question.questionId]?.isEmpty == true {
+                        allSubmissions.removeValue(forKey: question.questionId)
+                    }
+                    submittedIds.remove(question.questionId)
+                    errorMsg = error.localizedDescription
+                    showError = true
+                }
+            }
+        }
+    }
+
     // MARK: - Data Loading
+
     private func loadData() async {
         do {
             try await firebaseService.fetchQuestions()
@@ -101,20 +153,26 @@ struct LearnView: View {
 }
 
 // MARK: - Rank Filter Row
+
 struct RankFilterRow: View {
     let ranks: [VSTEPRank]
     @Binding var selectedID: String?
+
+    private func selectAll() {
+        withAnimation(.easeInOut(duration: 0.2)) { selectedID = nil }
+    }
+
+    private func toggle(_ rankID: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedID = selectedID == rankID ? nil : rankID
+        }
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    // "All" chip
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedID = nil
-                        }
-                    } label: {
+                    Button(action: selectAll) {
                         Text("All")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(
@@ -131,14 +189,8 @@ struct RankFilterRow: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Rank chips
                     ForEach(ranks) { rank in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedID =
-                                    selectedID == rank.id ? nil : rank.id
-                            }
-                        } label: {
+                        Button(action: { toggle(rank.id) }) {
                             Text(rank.cefr)
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(
@@ -159,13 +211,14 @@ struct RankFilterRow: View {
                 }
                 .padding(.horizontal)
             }
-            .background(Color(.systemGroupedBackground))  // clear ScrollView background
+            .background(Color(.systemGroupedBackground))
         }
-        .background(Color(.systemGroupedBackground))  // clear GlassEffectContainer background
+        .background(Color(.systemGroupedBackground))
     }
 }
 
 // MARK: - Rank Section
+
 struct RankSection: View {
     let rank: VSTEPRank
     let task1Questions: [VSTEPQuestion]
@@ -173,6 +226,8 @@ struct RankSection: View {
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
+    var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
+    var onRefresh: (() async -> Void)? = nil
 
     private func filtered(_ pool: [VSTEPQuestion]) -> [VSTEPQuestion] {
         pool.filter { rank.difficulties.contains($0.difficulty.lowercased()) }
@@ -189,7 +244,6 @@ struct RankSection: View {
             }
             .padding(.horizontal)
 
-            // Grouped block — all task categories in one card with Dividers
             VStack(spacing: 0) {
                 ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) {
                     index,
@@ -205,7 +259,9 @@ struct RankSection: View {
                             questions: pool,
                             submittedIds: submittedIds,
                             latestSubmissions: latestSubmissions,
-                            allSubmissions: allSubmissions
+                            allSubmissions: allSubmissions,
+                            onSubmit: onSubmit,
+                            onRefresh: onRefresh
                         )
                     ) {
                         HStack(spacing: 15) {
@@ -257,12 +313,15 @@ struct RankSection: View {
 }
 
 // MARK: - Task Question List
+
 struct TaskQuestionListView: View {
     let title: String
     let questions: [VSTEPQuestion]
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
+    var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
+    var onRefresh: (() async -> Void)? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -285,14 +344,16 @@ struct TaskQuestionListView: View {
                             ] ?? [],
                             isCompleted: submittedIds.contains(
                                 question.questionId
-                            )
+                            ),
+                            onSubmit: { essayText in
+                                onSubmit?(question, essayText)
+                            },
+                            onRefresh: onRefresh
                         )
-                        // Solo block per row
                         .glassEffect()
                         .padding(.horizontal)
                     }
                 }
-
                 Spacer(minLength: 60)
             }
             .padding(.top, 16)
@@ -325,12 +386,15 @@ struct TaskQuestionListView: View {
 }
 
 // MARK: - Question Row
+
 private struct QuestionRow: View {
     let number: Int
     let question: VSTEPQuestion
     let latestSubmission: UserSubmission?
     let submissionHistory: [UserSubmission]
     let isCompleted: Bool
+    var onSubmit: ((String) -> Void)? = nil
+    var onRefresh: (() async -> Void)? = nil
 
     var body: some View {
         NavigationLink(
@@ -338,7 +402,9 @@ private struct QuestionRow: View {
                 question: question,
                 questionNumber: number,
                 latestSubmission: isCompleted ? latestSubmission : nil,
-                submissionHistory: isCompleted ? submissionHistory : []
+                submissionHistory: isCompleted ? submissionHistory : [],
+                onSubmit: onSubmit,
+                onRefresh: onRefresh
             )
         ) {
             HStack(spacing: 15) {
@@ -406,6 +472,7 @@ private struct QuestionRow: View {
 }
 
 // MARK: - Loading View
+
 struct LearnLoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -420,6 +487,7 @@ struct LearnLoadingView: View {
 }
 
 // MARK: - Empty View
+
 struct LearnEmptyView: View {
     let onReload: () -> Void
 
@@ -439,6 +507,7 @@ struct LearnEmptyView: View {
 }
 
 // MARK: - VSTEP Rank Model
+
 struct VSTEPRank: Identifiable {
     let id: String
     let cefr: String
@@ -474,8 +543,7 @@ extension VSTEPRank {
                 ),
                 TaskCategory(
                     title: "Task 2 - Opinion Essay",
-                    subtitle:
-                        "Give your opinion on a familiar topic",
+                    subtitle: "Give your opinion on a familiar topic",
                     icon: "text.bubble",
                     color: .indigo,
                     taskType: "task2"
@@ -514,16 +582,14 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Complex Visuals",
-                    subtitle:
-                        "Synthesise data from multiple charts",
+                    subtitle: "Synthesise data from multiple charts",
                     icon: "chart.pie",
                     color: .red,
                     taskType: "task1"
                 ),
                 TaskCategory(
                     title: "Task 2 - Critical Essay",
-                    subtitle:
-                        "Evaluate ideas with advanced vocabulary",
+                    subtitle: "Evaluate ideas with advanced vocabulary",
                     icon: "doc.richtext",
                     color: .pink,
                     taskType: "task2"
