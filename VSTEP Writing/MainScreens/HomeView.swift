@@ -32,7 +32,6 @@ struct HomeView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
-                // Greeting + Start Writing sát nhau
                 HomeGreetingSection(displayName: displayName)
                 PrimaryActionCard { navigateToPractice = true }
 
@@ -46,7 +45,8 @@ struct HomeView: View {
                     RecentActivitySection(
                         submissions: recentSubmissions,
                         questionMap: firebaseService.questionMap,
-                        onScoreViewTap: { navigateToScore = true }
+                        onScoreViewTap: { navigateToScore = true },
+                        onLearnViewTap: { navigateToPractice = true }
                     )
 
                     BlogSection()
@@ -75,7 +75,6 @@ struct HomeView: View {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
-
         do {
             try await firebaseService.fetchQuestions()
             guard firebaseService.currentUserId != nil else { return }
@@ -98,9 +97,7 @@ struct HomeView: View {
             }
             .tint(.green)
         }
-
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
-
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 navigateToScore = true
@@ -115,9 +112,7 @@ struct HomeView: View {
             }
             .tint(.orange)
         }
-
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
-
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 navigateToTips = true
@@ -158,7 +153,7 @@ struct PrimaryActionCard: View {
                     Label("Start Writing", systemImage: "pencil.and.outline")
                         .font(.title3.bold())
                         .foregroundStyle(.white)
-                    Text("Practise VSTEP writing essays")
+                    Text("Practise VSTEP Task 1 & Task 2 essays")
                         .font(.subheadline)
                         .foregroundStyle(.white.opacity(0.85))
                         .multilineTextAlignment(.leading)
@@ -192,12 +187,15 @@ struct RecentActivitySection: View {
     let submissions: [UserSubmission]
     let questionMap: [String: VSTEPQuestion]
     let onScoreViewTap: () -> Void
+    let onLearnViewTap: () -> Void
 
-    /// Group submissions by questionId, sorted: newest group first, max 2 groups shown
+    /// Max 2 groups, each group = all submissions sharing same questionId (desc order)
     private var groupedSubmissions:
-        [(question: VSTEPQuestion?, entries: [UserSubmission])]
+        [(
+            questionId: String, question: VSTEPQuestion?,
+            entries: [UserSubmission]
+        )]
     {
-        // Group by questionId, preserving order of first appearance (submissions already desc)
         var order: [String] = []
         var dict: [String: [UserSubmission]] = [:]
         for s in submissions {
@@ -205,33 +203,31 @@ struct RecentActivitySection: View {
             dict[s.questionId, default: []].append(s)
         }
         return order.prefix(2).map { id in
-            (question: questionMap[id], entries: dict[id] ?? [])
+            (questionId: id, question: questionMap[id], entries: dict[id] ?? [])
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Recent Activity")
-                    .font(.headline)
-                Spacer()
-                if !submissions.isEmpty {
-                    Button("See All", action: onScoreViewTap)
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                }
-            }
-            .padding(.horizontal)
+            Text("Recent Activity")
+                .font(.headline)
+                .padding(.horizontal)
 
             if groupedSubmissions.isEmpty {
                 EmptyActivityView()
             } else {
-                VStack(spacing: 10) {
-                    ForEach(groupedSubmissions, id: \.entries.first?.id) {
-                        group in
-                        ActivityGroupRow(
+                VStack(spacing: 12) {
+                    ForEach(groupedSubmissions, id: \.questionId) { group in
+                        ActivityStackCard(
                             question: group.question,
-                            entries: group.entries
+                            entries: group.entries,
+                            onTap: {
+                                if group.entries.first?.score != nil {
+                                    onScoreViewTap()
+                                } else {
+                                    onLearnViewTap()
+                                }
+                            }
                         )
                     }
                 }
@@ -240,12 +236,17 @@ struct RecentActivitySection: View {
     }
 }
 
-// MARK: - Activity Group Row (stacked submissions for same question)
-struct ActivityGroupRow: View {
+// MARK: - Activity Stack Card
+/// Displays a group of submissions sharing the same questionId.
+/// - Top layer: latest entry (always visible)
+/// - Expanded: up to 3 entries total (including the top layer)
+/// - "Show all" appears when total entries exceed 3
+struct ActivityStackCard: View {
     let question: VSTEPQuestion?
     let entries: [UserSubmission]
+    let onTap: () -> Void
 
-    private var latest: UserSubmission? { entries.first }
+    @State private var isExpanded = false
 
     private var taskBadgeText: String {
         switch question?.taskType {
@@ -268,91 +269,160 @@ struct ActivityGroupRow: View {
         }
     }
 
+    /// Visible entries: collapsed → 1 only, expanded → up to 3
+    private var visibleEntries: [UserSubmission] {
+        isExpanded ? Array(entries.prefix(3)) : Array(entries.prefix(1))
+    }
+
+    private var hasMore: Bool { entries.count > 3 }
+    private var hiddenCount: Int { max(0, entries.count - 3) }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Latest submission row
-            if let sub = latest {
-                HStack(spacing: 14) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(taskBadgeColor)
-                        .frame(width: 4, height: 56)
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(question?.title ?? sub.questionId.uppercased())
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
-
-                        HStack(spacing: 6) {
-                            BadgeView(
-                                text: taskBadgeText,
-                                color: taskBadgeColor
-                            )
-                            if let diff = question?.difficulty {
-                                BadgeView(
-                                    text: diff.capitalized,
-                                    color: difficultyColor
-                                )
-                            }
-//                            Image(systemName: "clock")
-//                                .font(.caption2)
-//                                .foregroundColor(.secondary)
-//                            Text(sub.submittedAt, style: .relative)
-//                                .font(.caption)
-//                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    // Score hoặc status
-                    if let score = sub.score {
-                        VStack(spacing: 1) {
-                            Text(String(format: "%.1f", score))
-                                .font(.title3.bold().monospacedDigit())
-                                .foregroundColor(scoreColor(score))
-                            Text("/ 10")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(minWidth: 48, alignment: .trailing)
-                    } else {
-                        StatusBadgeView(status: sub.status)
-                            .frame(minWidth: 48, alignment: .trailing)
-                    }
+            // ── Rows ──
+            ForEach(Array(visibleEntries.enumerated()), id: \.element.id) {
+                index,
+                sub in
+                Button(action: onTap) {
+                    entryRow(sub: sub, isLatest: index == 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .buttonStyle(.plain)
+
+                if index < visibleEntries.count - 1 {
+                    Divider().padding(.leading, 56)
+                }
             }
 
-            // Nếu có nhiều hơn 1 lần submit, hiển thị dòng count nhỏ
+            // ── Expand / Collapse / Show All controls ──
             if entries.count > 1 {
-                Divider().padding(.leading, 34)
-                HStack {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.caption2)
+                Divider().padding(.leading, 56)
+
+                HStack(spacing: 0) {
+                    // Toggle expand/collapse (show up to 3)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(
+                                systemName: isExpanded
+                                    ? "chevron.up" : "chevron.down"
+                            )
+                            .font(.caption2.bold())
+                            Text(
+                                isExpanded
+                                    ? "Collapse"
+                                    : "\(min(entries.count - 1, 2)) more attempt\(entries.count > 2 ? "s" : "")"
+                            )
+                            .font(.caption)
+                        }
                         .foregroundColor(.secondary)
-                    Text(
-                        "\(entries.count - 1) earlier attempt\(entries.count > 2 ? "s" : "")"
-                    )
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+
                     Spacer()
-                    // Hiển thị score cao nhất nếu có
+
+                    // Show All — only appear when have stack > 3
+                    if isExpanded && hasMore {
+                        Button {
+                            onTap()  // navigate to ScoreView/LearnView
+                        } label: {
+                            Text("Show all \(entries.count)")
+                                .font(.caption.bold())
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+
+                    // Best score badge
                     if let best = entries.compactMap(\.score).max() {
-                        Text("Best: \(String(format: "%.1f", best))")
-                            .font(.caption.bold())
-                            .foregroundColor(.green)
+                        HStack(spacing: 3) {
+                            Image(systemName: "trophy.fill")
+                                .font(.caption2)
+                                .foregroundColor(.yellow)
+                            Text(String(format: "%.1f", best))
+                                .font(.caption.bold())
+                                .foregroundColor(.green)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
             }
         }
         .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func entryRow(sub: UserSubmission, isLatest: Bool) -> some View {
+        HStack(spacing: 14) {
+            // Accent bar
+            RoundedRectangle(cornerRadius: 3)
+                .fill(isLatest ? taskBadgeColor : taskBadgeColor.opacity(0.4))
+                .frame(width: 4, height: 52)
+
+            VStack(alignment: .leading, spacing: 5) {
+                // Title appear in the first row and not duplicate
+                if isLatest {
+                    Text(question?.title ?? sub.questionId.uppercased())
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 6) {
+                    if isLatest {
+                        BadgeView(text: taskBadgeText, color: taskBadgeColor)
+                        if let diff = question?.difficulty {
+                            BadgeView(
+                                text: diff.capitalized,
+                                color: difficultyColor
+                            )
+                        }
+                    } else {
+                        // Other row: appear "Attempt #N"
+                        Text("Earlier attempt")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(sub.submittedAt, style: .relative)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            // Score or status
+            if let score = sub.score {
+                VStack(spacing: 1) {
+                    Text(String(format: "%.1f", score))
+                        .font(.title3.bold().monospacedDigit())
+                        .foregroundColor(scoreColor(score))
+                    Text("/ 10")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .frame(minWidth: 48, alignment: .trailing)
+            } else {
+                StatusBadgeView(status: sub.status)
+                    .frame(minWidth: 48, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func scoreColor(_ score: Double) -> Color {
@@ -376,7 +446,6 @@ struct BlogPost: Identifiable {
 }
 
 struct BlogSection: View {
-    // Placeholder data — thay bằng Firebase fetch thực tế sau
     private let blogs: [BlogPost] = [
         BlogPost(
             id: "1",
@@ -413,11 +482,9 @@ struct BlogSection: View {
                 Text("Blog")
                     .font(.headline)
                 Spacer()
-                Button("View All") {
-                    // Navigate to full blog list
-                }
-                .font(.subheadline)
-                .foregroundColor(.blue)
+                Button("View All") { /* Navigate to full blog list */  }
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
             }
             .padding(.horizontal)
 
@@ -439,7 +506,6 @@ struct BlogCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Icon area
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(post.imageColor.opacity(0.12))
@@ -448,15 +514,12 @@ struct BlogCard: View {
                     .font(.system(size: 32))
                     .foregroundStyle(post.imageColor)
             }
-
             BadgeView(text: post.category, color: post.categoryColor)
-
             Text(post.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-
             Text(post.subtitle)
                 .font(.caption)
                 .foregroundColor(.secondary)

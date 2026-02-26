@@ -9,6 +9,8 @@ struct ContentView: View {
 }
 
 struct TabBarView: View {
+    @State private var notificationCount = 0
+
     var body: some View {
         TabView {
             // Home Tab
@@ -17,34 +19,35 @@ struct TabBarView: View {
                     HomeView()
                 }
             }
-            
+
             // Learn Tab
             Tab("Learn", systemImage: "graduationcap") {
                 NavigationStack {
                     LearnView()
                 }
             }
-            
+
             // Score Tab
             Tab("Score", systemImage: "chart.bar.xaxis.ascending") {
                 NavigationStack {
                     ScoreView()
                 }
             }
-            
+
             // Profile Tab
             Tab("Profile", systemImage: "person") {
                 NavigationStack {
                     ProfileView()
                 }
             }
-            
+
             // Search Tab
-            Tab(role: .search) {
+            Tab("Notifications", systemImage: "bell", role: .search) {
                 NavigationStack {
                     SearchView()
                 }
             }
+            .badge(notificationCount > 0 ? notificationCount : 0)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
     }

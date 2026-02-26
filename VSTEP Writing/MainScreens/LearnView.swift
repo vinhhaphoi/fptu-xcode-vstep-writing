@@ -1,8 +1,6 @@
-// LearnView.swift
 import SwiftUI
 
 // MARK: - LearnView
-
 struct LearnView: View {
     @StateObject private var firebaseService = FirebaseService.shared
     @State private var submittedIds: Set<String> = []
@@ -37,17 +35,17 @@ struct LearnView: View {
         }
         .navigationTitle("Learn")
         .navigationBarTitleDisplayMode(.large)
+        .background(Color(.systemGroupedBackground))
         .refreshable { await loadData() }
         .task { await loadData() }
         .alert("Error", isPresented: $showError) {
-            Button("OK") { }
+            Button("OK") {}
         } message: {
             Text(errorMsg)
         }
     }
 
     // MARK: - Main Content
-
     private var mainContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
@@ -75,18 +73,21 @@ struct LearnView: View {
     }
 
     // MARK: - Data Loading
-
     private func loadData() async {
         do {
             try await firebaseService.fetchQuestions()
             guard firebaseService.currentUserId != nil else { return }
             try? await firebaseService.fetchUserProgress()
-            submittedIds = Set(firebaseService.userProgress?.completedQuestions ?? [])
+            submittedIds = Set(
+                firebaseService.userProgress?.completedQuestions ?? []
+            )
             if let subs = try? await firebaseService.fetchUserSubmissions() {
                 var latestMap: [String: UserSubmission] = [:]
                 var allMap: [String: [UserSubmission]] = [:]
                 for sub in subs {
-                    if latestMap[sub.questionId] == nil { latestMap[sub.questionId] = sub }
+                    if latestMap[sub.questionId] == nil {
+                        latestMap[sub.questionId] = sub
+                    }
                     allMap[sub.questionId, default: []].append(sub)
                 }
                 latestSubmissions = latestMap
@@ -100,56 +101,71 @@ struct LearnView: View {
 }
 
 // MARK: - Rank Filter Row
-
 struct RankFilterRow: View {
     let ranks: [VSTEPRank]
     @Binding var selectedID: String?
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                RankChip(label: "All", color: .blue, isSelected: selectedID == nil) {
-                    selectedID = nil
-                }
-                ForEach(ranks) { rank in
-                    RankChip(
-                        label: rank.cefr,
-                        color: rank.color,
-                        isSelected: selectedID == rank.id
-                    ) {
-                        selectedID = (selectedID == rank.id) ? nil : rank.id
+        GlassEffectContainer(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // "All" chip
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedID = nil
+                        }
+                    } label: {
+                        Text("All")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(
+                                selectedID == nil ? .white : .primary
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .glassEffect(
+                                .regular.tint(
+                                    selectedID == nil ? .blue : .clear
+                                ).interactive(),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Rank chips
+                    ForEach(ranks) { rank in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedID =
+                                    selectedID == rank.id ? nil : rank.id
+                            }
+                        } label: {
+                            Text(rank.cefr)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(
+                                    selectedID == rank.id ? .white : .primary
+                                )
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .glassEffect(
+                                    .regular.tint(
+                                        selectedID == rank.id
+                                            ? rank.color : .clear
+                                    ).interactive(),
+                                    in: Capsule()
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
+            .background(Color(.systemGroupedBackground))  // clear ScrollView background
         }
-    }
-}
-
-struct RankChip: View {
-    let label: String
-    let color: Color
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(isSelected ? color : Color(.systemBackground))
-                .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
-        }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.15), value: isSelected)
+        .background(Color(.systemGroupedBackground))  // clear GlassEffectContainer background
     }
 }
 
 // MARK: - Rank Section
-
 struct RankSection: View {
     let rank: VSTEPRank
     let task1Questions: [VSTEPQuestion]
@@ -173,25 +189,25 @@ struct RankSection: View {
             }
             .padding(.horizontal)
 
-            // Grouped block: all task categories in one card with Dividers
-            // mirrors policyButtons pattern in ProfileView
+            // Grouped block — all task categories in one card with Dividers
             VStack(spacing: 0) {
-                ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) { index, category in
-                    let pool = category.taskType == "task1"
+                ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) {
+                    index,
+                    category in
+                    let pool =
+                        category.taskType == "task1"
                         ? filtered(task1Questions)
                         : filtered(task2Questions)
 
-                    NavigationLink {
-                        TaskQuestionListView(
+                    NavigationLink(
+                        destination: TaskQuestionListView(
                             title: category.title,
                             questions: pool,
                             submittedIds: submittedIds,
                             latestSubmissions: latestSubmissions,
                             allSubmissions: allSubmissions
                         )
-                    } label: {
-                        // Row structure matches ProfileView exactly:
-                        // icon.frame(40) | text block | Spacer | count badge | chevron
+                    ) {
                         HStack(spacing: 15) {
                             Image(systemName: category.icon)
                                 .font(.system(size: 24))
@@ -227,12 +243,10 @@ struct RankSection: View {
                         .padding(.vertical, 16)
                     }
                     .buttonStyle(.plain)
-                    // .disabled(pool.isEmpty)
+                    .disabled(pool.isEmpty)
 
                     if index < rank.taskCategories.count - 1 {
-                        // Inset divider aligns with text, not icon — matches ProfileView
-                        Divider()
-                            .padding(.leading, 70)
+                        Divider().padding(.leading, 70)
                     }
                 }
             }
@@ -243,9 +257,6 @@ struct RankSection: View {
 }
 
 // MARK: - Task Question List
-// Each question row is an individual solo glassEffect block,
-// matching the subscriptionStatusCard / darkModeToggle pattern in ProfileView.
-
 struct TaskQuestionListView: View {
     let title: String
     let questions: [VSTEPQuestion]
@@ -259,15 +270,24 @@ struct TaskQuestionListView: View {
                 if questions.isEmpty {
                     emptyBlock
                 } else {
-                    ForEach(Array(questions.enumerated()), id: \.element.questionId) { index, question in
+                    ForEach(
+                        Array(questions.enumerated()),
+                        id: \.element.questionId
+                    ) { index, question in
                         QuestionRow(
                             number: extractNumber(from: question.questionId),
                             question: question,
-                            latestSubmission: latestSubmissions[question.questionId],
-                            submissionHistory: allSubmissions[question.questionId] ?? [],
-                            isCompleted: submittedIds.contains(question.questionId)
+                            latestSubmission: latestSubmissions[
+                                question.questionId
+                            ],
+                            submissionHistory: allSubmissions[
+                                question.questionId
+                            ] ?? [],
+                            isCompleted: submittedIds.contains(
+                                question.questionId
+                            )
                         )
-                        // Solo block per row — same as each individual card in ProfileView
+                        // Solo block per row
                         .glassEffect()
                         .padding(.horizontal)
                     }
@@ -276,6 +296,7 @@ struct TaskQuestionListView: View {
                 Spacer(minLength: 60)
             }
             .padding(.top, 16)
+            .background(Color(.systemGroupedBackground))
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
@@ -304,8 +325,6 @@ struct TaskQuestionListView: View {
 }
 
 // MARK: - Question Row
-// Plain HStack with padding only — glassEffect is applied by the parent per row.
-
 private struct QuestionRow: View {
     let number: Int
     let question: VSTEPQuestion
@@ -325,7 +344,9 @@ private struct QuestionRow: View {
             HStack(spacing: 15) {
                 Text(String(format: "%02d", number))
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isCompleted ? .green : Color(.tertiaryLabel))
+                    .foregroundStyle(
+                        isCompleted ? .green : Color(.tertiaryLabel)
+                    )
                     .frame(width: 40)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -377,15 +398,14 @@ private struct QuestionRow: View {
 
     private func scoreColor(_ score: Double) -> Color {
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 }
 
 // MARK: - Loading View
-
 struct LearnLoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -400,7 +420,6 @@ struct LearnLoadingView: View {
 }
 
 // MARK: - Empty View
-
 struct LearnEmptyView: View {
     let onReload: () -> Void
 
@@ -420,23 +439,21 @@ struct LearnEmptyView: View {
 }
 
 // MARK: - VSTEP Rank Model
-
 struct VSTEPRank: Identifiable {
     let id: String
     let cefr: String
     let displayName: String
     let color: Color
-    // Maps to VSTEPQuestion.difficulty values stored in Firestore
     let difficulties: [String]
     let taskCategories: [TaskCategory]
-}
 
-struct TaskCategory {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
-    let taskType: String    // "task1" | "task2"
+    struct TaskCategory {
+        let title: String
+        let subtitle: String
+        let icon: String
+        let color: Color
+        let taskType: String  // "task1" or "task2"
+    }
 }
 
 extension VSTEPRank {
@@ -450,14 +467,15 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Visual Description",
-                    subtitle: "Describe a chart, graph or table (~150 words)",
+                    subtitle: "Describe a chart, graph or table · 150 words",
                     icon: "chart.bar",
                     color: .blue,
                     taskType: "task1"
                 ),
                 TaskCategory(
                     title: "Task 2 - Opinion Essay",
-                    subtitle: "Give your opinion on a familiar topic (~250 words)",
+                    subtitle:
+                        "Give your opinion on a familiar topic · 250 words",
                     icon: "text.bubble",
                     color: .indigo,
                     taskType: "task2"
@@ -473,14 +491,14 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Data Analysis",
-                    subtitle: "Analyse trends and compare data (~150 words)",
+                    subtitle: "Analyse trends and compare data · 150 words",
                     icon: "chart.line.uptrend.xyaxis",
                     color: .purple,
                     taskType: "task1"
                 ),
                 TaskCategory(
                     title: "Task 2 - Argumentative Essay",
-                    subtitle: "Argue both sides of a complex issue (~250 words)",
+                    subtitle: "Argue both sides of a complex issue · 250 words",
                     icon: "text.book.closed",
                     color: .orange,
                     taskType: "task2"
@@ -496,14 +514,16 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Complex Visuals",
-                    subtitle: "Synthesise data from multiple charts (~150 words)",
+                    subtitle:
+                        "Synthesise data from multiple charts · 150 words",
                     icon: "chart.pie",
                     color: .red,
                     taskType: "task1"
                 ),
                 TaskCategory(
                     title: "Task 2 - Critical Essay",
-                    subtitle: "Evaluate ideas with advanced vocabulary (~250 words)",
+                    subtitle:
+                        "Evaluate ideas with advanced vocabulary · 250 words",
                     icon: "doc.richtext",
                     color: .pink,
                     taskType: "task2"
