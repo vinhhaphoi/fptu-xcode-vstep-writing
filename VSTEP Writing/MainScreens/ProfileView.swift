@@ -130,19 +130,19 @@ struct ProfileView: View {
                             }
                         }
                     }
-
-                Button {
-                    showImagePicker = true
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.blue))
-                        .shadow(radius: 3)
-                }
-                .disabled(isUploadingPhoto)
-                .offset(x: -2, y: -2)
+//
+//                Button {
+//                    showImagePicker = true
+//                } label: {
+//                    Image(systemName: "camera.fill")
+//                        .font(.system(size: 14))
+//                        .foregroundColor(.white)
+//                        .frame(width: 32, height: 32)
+//                        .background(Circle().fill(Color.blue))
+//                        .shadow(radius: 3)
+//                }
+//                .disabled(isUploadingPhoto)
+//                .offset(x: -2, y: -2)
             }
         }
         .padding(.vertical, 28)
