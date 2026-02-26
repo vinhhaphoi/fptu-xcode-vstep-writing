@@ -61,7 +61,7 @@ struct HomeView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Home")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.inlineLarge)
         .refreshable { await loadData() }
         .task { await loadData() }
         // Single navigationDestination at top level to avoid navigation stack conflicts
