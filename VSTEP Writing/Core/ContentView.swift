@@ -1,3 +1,5 @@
+// ContentView.swift
+
 import SwiftUI
 
 struct ContentView: View {
@@ -9,7 +11,7 @@ struct ContentView: View {
 }
 
 struct TabBarView: View {
-    @State private var notificationCount = 0
+    @State private var unreadCount = 0
 
     var body: some View {
         TabView {
@@ -42,14 +44,36 @@ struct TabBarView: View {
             }
 
             Tab(role: .search) {
-                NavigationStack { SearchView() }
+                NavigationStack {
+                    NotificationView()
+                        // Reset badge when user opens notification tab
+                        .onAppear {
+                            Task { await refreshUnreadCount() }
+                        }
+                }
             } label: {
                 Label("Notifications", systemImage: "bell")
                     .environment(\.symbolVariants, .none)
             }
-            .badge(notificationCount > 0 ? notificationCount : 0)
+            .badge(unreadCount > 0 ? Text("") : nil)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .task {
+            await refreshUnreadCount()
+        }
+        // Auto-update badge when new FCM push arrives
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .didReceivePushNotification
+            )
+        ) { _ in
+            Task { await refreshUnreadCount() }
+        }
     }
 
+    private func refreshUnreadCount() async {
+        let all =
+            (try? await NotificationService.shared.fetchNotifications()) ?? []
+        unreadCount = all.filter { !$0.isRead }.count
+    }
 }

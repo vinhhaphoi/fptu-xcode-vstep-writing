@@ -6,6 +6,7 @@ import SwiftUI
 // Firebase
 import FirebaseCore
 import FirebaseAuth
+import FirebaseFirestore
 
 // Third-party
 import GoogleSignIn
@@ -109,6 +110,17 @@ class AuthenticationManager: ObservableObject {
             case .signInFailed(let message): return message
             }
         }
+    }
+    
+    func deleteAccount() async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw NSError(domain: "Auth", code: -1, userInfo: [NSLocalizedDescriptionKey: "No user logged in"])
+        }
+        // Delete Firestore user data before deleting auth account
+        let db = Firestore.firestore()
+        try await db.collection("users").document(user.uid).delete()
+        // Delete Firebase Auth account
+        try await user.delete()
     }
     
     deinit {
