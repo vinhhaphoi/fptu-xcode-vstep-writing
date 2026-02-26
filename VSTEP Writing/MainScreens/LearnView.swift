@@ -34,7 +34,7 @@ struct LearnView: View {
             }
         }
         .navigationTitle("Learn")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.large)
         .background(Color(.systemGroupedBackground))
         .refreshable { await loadData() }
         .task { await loadData() }
@@ -300,7 +300,7 @@ struct TaskQuestionListView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
     }
 
     private var emptyBlock: some View {
@@ -467,7 +467,7 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Visual Description",
-                    subtitle: "Describe a chart, graph or table · 150 words",
+                    subtitle: "Describe a chart, graph or table",
                     icon: "chart.bar",
                     color: .blue,
                     taskType: "task1"
@@ -475,7 +475,7 @@ extension VSTEPRank {
                 TaskCategory(
                     title: "Task 2 - Opinion Essay",
                     subtitle:
-                        "Give your opinion on a familiar topic · 250 words",
+                        "Give your opinion on a familiar topic",
                     icon: "text.bubble",
                     color: .indigo,
                     taskType: "task2"
@@ -491,14 +491,14 @@ extension VSTEPRank {
             taskCategories: [
                 TaskCategory(
                     title: "Task 1 - Data Analysis",
-                    subtitle: "Analyse trends and compare data · 150 words",
+                    subtitle: "Analyse trends and compare data",
                     icon: "chart.line.uptrend.xyaxis",
                     color: .purple,
                     taskType: "task1"
                 ),
                 TaskCategory(
                     title: "Task 2 - Argumentative Essay",
-                    subtitle: "Argue both sides of a complex issue · 250 words",
+                    subtitle: "Argue both sides of a complex issue",
                     icon: "text.book.closed",
                     color: .orange,
                     taskType: "task2"
@@ -515,7 +515,7 @@ extension VSTEPRank {
                 TaskCategory(
                     title: "Task 1 - Complex Visuals",
                     subtitle:
-                        "Synthesise data from multiple charts · 150 words",
+                        "Synthesise data from multiple charts",
                     icon: "chart.pie",
                     color: .red,
                     taskType: "task1"
@@ -523,7 +523,7 @@ extension VSTEPRank {
                 TaskCategory(
                     title: "Task 2 - Critical Essay",
                     subtitle:
-                        "Evaluate ideas with advanced vocabulary · 250 words",
+                        "Evaluate ideas with advanced vocabulary",
                     icon: "doc.richtext",
                     color: .pink,
                     taskType: "task2"

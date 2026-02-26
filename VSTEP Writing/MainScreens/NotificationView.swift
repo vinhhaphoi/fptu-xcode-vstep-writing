@@ -65,7 +65,7 @@ struct NotificationView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: showTestToast)
         .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.large)
         .searchable(text: $searchText, prompt: "Search questions...")
         .toolbar {
             // Mark all as read - only show when there are unread notifications

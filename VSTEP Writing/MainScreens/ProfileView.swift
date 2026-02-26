@@ -74,7 +74,7 @@ struct ProfileView: View {
             Task { await handleImageSelection(newValue) }
         }
         .navigationTitle("Profile")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.large)
         .alert("Sign out", isPresented: $showLogoutAlert) {
             Button("Cancel", role: .cancel) {}
             Button("Sign out", role: .destructive) { handleLogout() }

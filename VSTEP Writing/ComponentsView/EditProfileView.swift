@@ -65,8 +65,8 @@ struct EditProfileView: View {
             .padding(.vertical)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("Edit Profile")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationTitle("Edit your VSTEP account")
+        .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if isLoading {
                 ProgressView()

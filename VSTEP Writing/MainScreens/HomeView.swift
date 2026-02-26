@@ -58,7 +58,7 @@ struct HomeView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Home")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.large)
         .toolbar { ToolBarItems }
         .refreshable { await loadData() }
         .task { await loadData() }
@@ -622,7 +622,7 @@ struct GrammarView: View {
             .padding()
         }
         .navigationTitle("Grammar")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
     }
 }
 
@@ -637,6 +637,6 @@ struct TipsView: View {
             .padding()
         }
         .navigationTitle("Tips")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbarTitleDisplayMode(.inline)
     }
 }

@@ -102,7 +102,7 @@ struct ScoreView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Score")
-        .navigationBarTitleDisplayMode(.large)
+        .toolbarTitleDisplayMode(.large)
         .refreshable { await loadSubmissions() }
         .task {
             if firebaseService.questions.isEmpty {
