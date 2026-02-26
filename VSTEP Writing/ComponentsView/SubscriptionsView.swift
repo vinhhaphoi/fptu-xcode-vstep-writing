@@ -156,7 +156,7 @@ struct SubscriptionsView: View {
     }
 
     private func planCard(product: Product) -> some View {
-        let isPurchased = store.isPurchased(product.id)
+//        let isPurchased = store.isPurchased(product.id)
         let plan = plans[product.id]
         let isActive = activeProductID == product.id
 

@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -14,14 +15,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         return true
     }
-    
-    // Handle Google Sign-In callback (nếu dùng)
-    func application(_ app: UIApplication,
-                     open url: URL,
-                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        // Sẽ thêm Google Sign-In handler sau
-        return true
-    }
 }
 
 @main
@@ -31,8 +24,12 @@ struct VSTEP_WritingApp: App {
     
     var body: some Scene {
         WindowGroup {
-            RootView()  // ← Thay ContentView() bằng RootView()
+            RootView()
                 .environmentObject(authManager)
+                .onOpenURL { url in
+                    // ← Google Sign In callback
+                    GIDSignIn.sharedInstance.handle(url)
+                }
         }
     }
 }
