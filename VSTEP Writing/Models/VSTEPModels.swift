@@ -1,6 +1,6 @@
+import FirebaseFirestore
 // VSTEPModels.swift
 import Foundation
-import FirebaseFirestore
 import SwiftUI
 
 // MARK: - Task Model
@@ -22,7 +22,7 @@ struct VSTEPTask: Identifiable, Codable {
 // MARK: - Question Model
 struct VSTEPQuestion: Identifiable, Codable {
     @DocumentID var id: String?
-    let questionId: String          // non-optional: luôn có trong Firestore doc
+    let questionId: String  // non-optional: luôn có trong Firestore doc
     let taskType: String
     let category: String
     let title: String
@@ -34,13 +34,13 @@ struct VSTEPQuestion: Identifiable, Codable {
     let formalityLevel: String?
     let essayType: String?
     let difficulty: String
-    var tags: [String]              // var: tránh crash nếu field vắng trong Firestore
+    var tags: [String]  // var: tránh crash nếu field vắng trong Firestore
     let suggestedStructure: [String]?
 
     // MARK: Computed
-    var isTask1: Bool  { taskType == "task1" }
-    var isTask2: Bool  { taskType == "task2" }
-    var minWords: Int  { isTask1 ? 120 : 250 }
+    var isTask1: Bool { taskType == "task1" }
+    var isTask2: Bool { taskType == "task2" }
+    var minWords: Int { isTask1 ? 120 : 250 }
     var timeLimit: Int { isTask1 ? 20 : 40 }
 
     enum CodingKeys: String, CodingKey {
@@ -76,57 +76,75 @@ struct RubricLevel: Codable {
 
 // MARK: - Submission Status (top-level — FirebaseService cần dùng trực tiếp)
 enum SubmissionStatus: String, Codable {
-    case draft      = "draft"
-    case submitted  = "submitted"
-    case grading    = "grading"
-    case graded     = "graded"
-    case failed     = "failed"
+    case draft = "draft"
+    case submitted = "submitted"
+    case grading = "grading"
+    case graded = "graded"
+    case failed = "failed"
 
     var displayText: String {
         switch self {
-        case .draft:     return "Draft"
+        case .draft: return "Draft"
         case .submitted: return "Submitted"
-        case .grading:   return "Grading…"
-        case .graded:    return "Graded"
-        case .failed:    return "Failed"
+        case .grading: return "Grading…"
+        case .graded: return "Graded"
+        case .failed: return "Failed"
         }
     }
 
     var icon: String {
         switch self {
-        case .draft:     return "doc"
+        case .draft: return "doc"
         case .submitted: return "paperplane.fill"
-        case .grading:   return "clock.fill"
-        case .graded:    return "checkmark.seal.fill"
-        case .failed:    return "xmark.circle.fill"
+        case .grading: return "clock.fill"
+        case .graded: return "checkmark.seal.fill"
+        case .failed: return "xmark.circle.fill"
         }
     }
 }
 
 // MARK: - User Submission
 struct UserSubmission: Identifiable, Codable {
-    @DocumentID var id: String?        // Firestore doc ID — ignored on encode [web:26]
-    var questionId: String             // non-optional: luôn có khi submit
-    let content: String                // nội dung essay
+    @DocumentID var id: String?
+    var questionId: String
+    let content: String
     let wordCount: Int
     var submittedAt: Date
-    var score: Double?                 // 0–10 VSTEP, nil = chưa chấm
+    var score: Double?
     var feedback: String?
+    var overallComment: String?
+    var suggestions: [String]?
+    var criteria: [SubmissionCriterion]?
     var status: SubmissionStatus
-    var essayText: String? = nil       // = nil → memberwise init không bắt buộc truyền [web:35]
+    var essayText: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case questionId, content, wordCount, submittedAt
-        case score, feedback, status, essayText
-    }
+           case questionId
+           case content
+           case wordCount
+           case submittedAt
+           case score
+           case feedback
+           case overallComment 
+           case suggestions
+           case criteria
+           case status
+           case essayText
+       }
+}
+struct SubmissionCriterion: Codable, Hashable {
+    let name: String
+    let score: Double?
+    let band: String?
+    let feedback: String?
 }
 
 // MARK: - User Progress
 struct UserProgress: Codable {
     var completedQuestions: [String]
-    var averageScore: Double           // var: FirebaseService cần ghi trực tiếp
+    var averageScore: Double  // var: FirebaseService cần ghi trực tiếp
     var totalSubmissions: Int
-    var lastActivityDate: Date?        // optional: serverTimestamp nil khi mới tạo
+    var lastActivityDate: Date?  // optional: serverTimestamp nil khi mới tạo
     var task1Completed: Int
     var task2Completed: Int
 }
@@ -144,10 +162,10 @@ enum FirebaseServiceError: LocalizedError {
         switch self {
         case .notAuthenticated: return "Vui lòng đăng nhập để tiếp tục."
         case .documentNotFound: return "Không tìm thấy dữ liệu yêu cầu."
-        case .invalidData:      return "Định dạng dữ liệu không hợp lệ."
-        case .encodingFailed:   return "Không thể mã hoá dữ liệu."
-        case .uploadFailed:     return "Tải dữ liệu lên thất bại."
-        case .networkError:     return "Lỗi kết nối mạng."
+        case .invalidData: return "Định dạng dữ liệu không hợp lệ."
+        case .encodingFailed: return "Không thể mã hoá dữ liệu."
+        case .uploadFailed: return "Tải dữ liệu lên thất bại."
+        case .networkError: return "Lỗi kết nối mạng."
         }
     }
 }

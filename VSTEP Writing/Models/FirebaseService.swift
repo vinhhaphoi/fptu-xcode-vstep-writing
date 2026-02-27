@@ -23,11 +23,12 @@ class FirebaseService: ObservableObject {
     var isAuthenticated: Bool { currentUserId != nil }
 
     // MARK: - Question Map
-    /// Tra cứu O(1): questionId field → VSTEPQuestion
-    /// FIX: questionId là String (non-optional) → dùng map thay vì compactMap+guard let
     var questionMap: [String: VSTEPQuestion] {
         Dictionary(uniqueKeysWithValues: questions.map { ($0.questionId, $0) })
     }
+
+    // MARK: - Active submission listeners
+    private var submissionListeners: [String: ListenerRegistration] = [:]
 
     private init() {}
 
@@ -83,10 +84,8 @@ class FirebaseService: ObservableObject {
     // MARK: - Fetch Single Question (cache-first)
     // ─────────────────────────────────────────────
     func fetchQuestion(questionId: String) async throws -> VSTEPQuestion? {
-        // 1. In-memory cache
         if let cached = questionMap[questionId] { return cached }
 
-        // 2. Fallback: Firestore query
         let snapshot = try await db.collection("questions")
             .whereField("questionId", isEqualTo: questionId)
             .limit(to: 1)
@@ -137,7 +136,7 @@ class FirebaseService: ObservableObject {
         try await db
             .collection("users").document(userId)
             .collection("submissions")
-            .addDocument(data: try Firestore.Encoder().encode(submission))
+            .addDocument(data: Firestore.Encoder().encode(submission))
 
         try await updateUserProgress(questionId: questionId)
         print("[FirebaseService] Submitted answer for \(questionId)")
@@ -146,20 +145,95 @@ class FirebaseService: ObservableObject {
     // ─────────────────────────────────────────────
     // MARK: - Submit Essay (called from LearnView)
     // ─────────────────────────────────────────────
-    func submitEssay(_ submission: UserSubmission) async throws {
+    func submitEssay(_ submission: UserSubmission) async throws -> String {
         guard let userId = currentUserId else {
             throw FirebaseServiceError.notAuthenticated
         }
 
-        try await db
+        let ref = try await db
             .collection("users").document(userId)
             .collection("submissions")
-            .addDocument(data: try Firestore.Encoder().encode(submission))
+            .addDocument(data: Firestore.Encoder().encode(submission))
 
         try await updateUserProgress(questionId: submission.questionId)
         print(
-            "[FirebaseService] submitEssay — questionId: \(submission.questionId)"
+            "[FirebaseService] submitEssay — questionId: \(submission.questionId), docId: \(ref.documentID)"
         )
+        return ref.documentID
+    }
+
+    // ─────────────────────────────────────────────
+    // MARK: - Listen for AI Grading Result (real-time)
+    // Tự động timeout sau 120 giây nếu AI không trả kết quả
+    // ─────────────────────────────────────────────
+    func listenForGradingResult(
+        submissionId: String,
+        questionId: String,
+        onChange: @escaping (UserSubmission) -> Void,
+        onTimeout: @escaping () -> Void
+    ) {
+        guard let userId = currentUserId else { return }
+
+        stopListening(forQuestionId: questionId)
+
+        let docRef = db
+            .collection("users").document(userId)
+            .collection("submissions").document(submissionId)
+
+        let listener = docRef.addSnapshotListener { snapshot, error in
+            if let error = error {
+                print("[FirebaseService] Listener error: \(error.localizedDescription)")
+                return
+            }
+            guard let snapshot, snapshot.exists else { return }
+
+            do {
+                let updated = try snapshot.data(as: UserSubmission.self)
+                print("[FirebaseService] Submission \(submissionId) status: \(updated.status.rawValue)")
+                onChange(updated)
+
+                if updated.status == .graded || updated.status == .failed {
+                    self.stopListening(forQuestionId: questionId)
+                }
+            } catch {
+                print("[FirebaseService] Decode submission failed: \(error.localizedDescription)")
+            }
+        }
+
+        submissionListeners[questionId] = listener
+
+        // Timeout sau 120 giây — nếu AI vẫn chưa trả kết quả thì báo lỗi
+        Task {
+            try? await Task.sleep(for: .seconds(120))
+
+            // Chỉ trigger timeout nếu listener vẫn còn active (chưa graded/failed)
+            guard self.submissionListeners[questionId] != nil else { return }
+
+            print("[FirebaseService] Timeout: submission \(submissionId) exceeded 120s")
+            self.stopListening(forQuestionId: questionId)
+
+            // Cập nhật document trên Firestore thành "failed"
+            try? await docRef.updateData([
+                "status": SubmissionStatus.failed.rawValue,
+                "errorMessage": "AI grading timed out. Please try again.",
+            ])
+
+            onTimeout()
+        }
+    }
+
+
+    // ─────────────────────────────────────────────
+    // MARK: - Stop Listeners
+    // ─────────────────────────────────────────────
+    func stopListening(forQuestionId questionId: String) {
+        submissionListeners[questionId]?.remove()
+        submissionListeners.removeValue(forKey: questionId)
+    }
+
+    func stopAllListeners() {
+        submissionListeners.values.forEach { $0.remove() }
+        submissionListeners.removeAll()
     }
 
     // ─────────────────────────────────────────────

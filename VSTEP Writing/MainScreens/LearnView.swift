@@ -12,6 +12,9 @@ struct LearnView: View {
     @State private var errorMsg = ""
     @State private var selectedRankID: String? = nil
 
+    // Cache key — chi dung cho offline fallback, KHONG inject nguoc khi online
+    private let cacheKey = "cached_latest_submissions"
+
     private var task1Questions: [VSTEPQuestion] {
         firebaseService.questions.filter { $0.isTask1 }
     }
@@ -44,6 +47,9 @@ struct LearnView: View {
             Button("OK") {}
         } message: {
             Text(errorMsg)
+        }
+        .onDisappear {
+            firebaseService.stopAllListeners()
         }
     }
 
@@ -96,7 +102,7 @@ struct LearnView: View {
             status: .submitted
         )
 
-        // Optimistic update — reflect changes in UI immediately
+        // Optimistic update — hien thi ngay tren UI truoc khi Firestore confirm
         latestSubmissions[question.questionId] = newSubmission
         allSubmissions[question.questionId, default: []].insert(
             newSubmission,
@@ -106,9 +112,45 @@ struct LearnView: View {
 
         Task { [firebaseService] in
             do {
-                try await firebaseService.submitEssay(newSubmission)
+                let docId = try await firebaseService.submitEssay(newSubmission)
+
+                firebaseService.listenForGradingResult(
+                    submissionId: docId,
+                    questionId: question.questionId,
+                    onChange: { updated in
+                        self.latestSubmissions[question.questionId] = updated
+                        if var history = self.allSubmissions[
+                            question.questionId
+                        ],
+                            !history.isEmpty
+                        {
+                            history[0] = updated
+                            self.allSubmissions[question.questionId] = history
+                        }
+                        // Luu cache moi lan AI cap nhat trang thai
+                        self.saveLocalCache()
+                    },
+                    onTimeout: {
+                        // Timeout: danh dau failed, giu lai content
+                        var timedOut = newSubmission
+                        timedOut.status = .failed
+                        self.latestSubmissions[question.questionId] = timedOut
+                        if var history = self.allSubmissions[
+                            question.questionId
+                        ],
+                            !history.isEmpty
+                        {
+                            history[0] = timedOut
+                            self.allSubmissions[question.questionId] = history
+                        }
+                        self.saveLocalCache()
+                        self.errorMsg =
+                            "AI grading timed out after 2 minutes. Please try again."
+                        self.showError = true
+                    }
+                )
             } catch {
-                // Rollback on failure
+                // Rollback optimistic update neu submit that bai
                 await MainActor.run {
                     latestSubmissions.removeValue(forKey: question.questionId)
                     allSubmissions[question.questionId]?.removeFirst()
@@ -124,31 +166,74 @@ struct LearnView: View {
     }
 
     // MARK: - Data Loading
+    // Firestore la source of truth — cache chi dung khi offline (fetch that bai)
 
     private func loadData() async {
         do {
             try await firebaseService.fetchQuestions()
             guard firebaseService.currentUserId != nil else { return }
             try? await firebaseService.fetchUserProgress()
-            submittedIds = Set(
-                firebaseService.userProgress?.completedQuestions ?? []
-            )
+
             if let subs = try? await firebaseService.fetchUserSubmissions() {
                 var latestMap: [String: UserSubmission] = [:]
                 var allMap: [String: [UserSubmission]] = [:]
+
                 for sub in subs {
                     if latestMap[sub.questionId] == nil {
                         latestMap[sub.questionId] = sub
                     }
                     allMap[sub.questionId, default: []].append(sub)
                 }
+
+                // Firestore = source of truth
+                // KHONG inject cache nguoc — neu Firestore khong co record thi khong hien
                 latestSubmissions = latestMap
                 allSubmissions = allMap
+                submittedIds = Set(latestMap.keys)
+
+                // Cap nhat cache theo Firestore hien tai (overwrite, khong merge)
+                saveLocalCache()
+            } else {
+                // fetchUserSubmissions tra ve nil nhung khong throw
+                // Giu nguyen UI hien tai, khong thay doi gi
             }
         } catch {
+            // Fetch that bai hoan toan (offline / network error)
+            // Fallback ve cache de hien thi du lieu cu
+            let cached = loadLocalCache()
+            if !cached.isEmpty {
+                latestSubmissions = cached
+                allSubmissions = cached.mapValues { [$0] }
+                submittedIds = Set(cached.keys)
+            }
             errorMsg = error.localizedDescription
             showError = true
         }
+    }
+
+    // MARK: - Local Cache Helpers
+    // Cache chi luu submission co score (graded) de dung khi offline
+
+    private func saveLocalCache() {
+        guard let userId = firebaseService.currentUserId else { return }
+        let key = "\(cacheKey)_\(userId)"
+        // Chi luu graded submission (co score) — bo qua submitted/grading/failed
+        let toCache = latestSubmissions.filter { $0.value.score != nil }
+        if let encoded = try? JSONEncoder().encode(toCache) {
+            UserDefaults.standard.set(encoded, forKey: key)
+        }
+    }
+
+    private func loadLocalCache() -> [String: UserSubmission] {
+        guard let userId = firebaseService.currentUserId else { return [:] }
+        let key = "\(cacheKey)_\(userId)"
+        guard let data = UserDefaults.standard.data(forKey: key),
+            let decoded = try? JSONDecoder().decode(
+                [String: UserSubmission].self,
+                from: data
+            )
+        else { return [:] }
+        return decoded
     }
 }
 
@@ -245,9 +330,10 @@ struct RankSection: View {
             .padding(.horizontal)
 
             VStack(spacing: 0) {
-                ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) {
-                    index,
-                    category in
+                ForEach(
+                    Array(rank.taskCategories.enumerated()),
+                    id: \.offset
+                ) { index, category in
                     let pool =
                         category.taskType == "task1"
                         ? filtered(task1Questions)
@@ -451,13 +537,22 @@ private struct QuestionRow: View {
                     .foregroundStyle(.secondary)
             }
         } else if isCompleted {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 6, height: 6)
-                Text("Pending")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+            if latestSubmission?.status == .grading {
+                HStack(spacing: 4) {
+                    ProgressView().scaleEffect(0.6)
+                    Text("AI Grading")
+                        .font(.callout)
+                        .foregroundStyle(.blue)
+                }
+            } else {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                    Text("Pending")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
             }
         }
     }
@@ -521,7 +616,7 @@ struct VSTEPRank: Identifiable {
         let subtitle: String
         let icon: String
         let color: Color
-        let taskType: String  // "task1" or "task2"
+        let taskType: String
     }
 }
 
