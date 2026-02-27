@@ -859,13 +859,15 @@ private struct HistoryAttemptCard: View {
                             id: \.offset
                         ) { index, suggestion in
                             HStack(alignment: .top, spacing: 10) {
-                                Text("\(index + 1)")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 18, height: 18)
-                                    .background(Color.blue.opacity(0.7))
-                                    .clipShape(Circle())
-                                    .padding(.top, 1)
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.blue.opacity(0.7))
+                                        .frame(width: 20, height: 20)
+                                    Text("\(index + 1)")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                                .padding(.top, 2)
                                 Text(suggestion.markdownAttributed())
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
