@@ -89,9 +89,15 @@ struct ProfileView: View {
             )
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView() }
-        .navigationDestination(isPresented: $showContactUs) { ContactInfoView() }
-        .navigationDestination(isPresented: $showEditProfile) { EditProfileView() }
-        .navigationDestination(isPresented: $showSubscription) { SubscriptionsView() }
+        .navigationDestination(isPresented: $showContactUs) {
+            ContactInfoView()
+        }
+        .navigationDestination(isPresented: $showEditProfile) {
+            EditProfileView()
+        }
+        .navigationDestination(isPresented: $showSubscription) {
+            SubscriptionsView()
+        }
         .navigationDestination(item: $selectedPolicy) { policyType in
             switch policyType {
             case .termsOfUse: TermsOfUseView()
@@ -130,19 +136,19 @@ struct ProfileView: View {
                             }
                         }
                     }
-//
-//                Button {
-//                    showImagePicker = true
-//                } label: {
-//                    Image(systemName: "camera.fill")
-//                        .font(.system(size: 14))
-//                        .foregroundColor(.white)
-//                        .frame(width: 32, height: 32)
-//                        .background(Circle().fill(Color.blue))
-//                        .shadow(radius: 3)
-//                }
-//                .disabled(isUploadingPhoto)
-//                .offset(x: -2, y: -2)
+                //
+                //                Button {
+                //                    showImagePicker = true
+                //                } label: {
+                //                    Image(systemName: "camera.fill")
+                //                        .font(.system(size: 14))
+                //                        .foregroundColor(.white)
+                //                        .frame(width: 32, height: 32)
+                //                        .background(Circle().fill(Color.blue))
+                //                        .shadow(radius: 3)
+                //                }
+                //                .disabled(isUploadingPhoto)
+                //                .offset(x: -2, y: -2)
             }
         }
         .padding(.vertical, 28)
@@ -173,9 +179,13 @@ struct ProfileView: View {
                 .padding(.vertical, 16)
                 .glassEffect()
 
-            } else if subscriptionStatus == "active", let productID = subscriptionProductID {
+            } else if subscriptionStatus == "active",
+                let productID = subscriptionProductID
+            {
                 // ── Active subscription
-                Button { showSubscription = true } label: {
+                Button {
+                    showSubscription = true
+                } label: {
                     HStack(spacing: 15) {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 22))
@@ -186,9 +196,11 @@ struct ProfileView: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(.primary)
                             if let expiry = subscriptionExpiry {
-                                Text("Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Text(
+                                    "Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
@@ -204,7 +216,9 @@ struct ProfileView: View {
 
             } else {
                 // ── No active subscription
-                Button { showSubscription = true } label: {
+                Button {
+                    showSubscription = true
+                } label: {
                     HStack(spacing: 15) {
                         Image(systemName: "crown")
                             .font(.system(size: 22))
@@ -231,16 +245,15 @@ struct ProfileView: View {
             }
 
             // Caption
-//            HStack(spacing: 8) {
-//                Text("Manage your subscriptions")
-//                    .font(.caption)
-//                    .foregroundStyle(.secondary)
-//                Spacer()
-//            }
-//            .padding(.leading, 20)
+            //            HStack(spacing: 8) {
+            //                Text("Manage your subscriptions")
+            //                    .font(.caption)
+            //                    .foregroundStyle(.secondary)
+            //                Spacer()
+            //            }
+            //            .padding(.leading, 20)
         }
     }
-
 
     // MARK: - Avatar View
     @ViewBuilder
@@ -274,7 +287,9 @@ struct ProfileView: View {
     // MARK: - Policy Buttons
     private var policyButtons: some View {
         VStack(spacing: 0) {
-            ForEach(Array(policyList.enumerated()), id: \.offset) { index, policy in
+            ForEach(Array(policyList.enumerated()), id: \.offset) {
+                index,
+                policy in
                 Button {
                     selectedPolicy = policy.type
                 } label: {
@@ -309,8 +324,18 @@ struct ProfileView: View {
 
     private var policyList: [PolicyInfo] {
         [
-            PolicyInfo(icon: "newspaper", iconColor: .blue, title: "Terms of Use", type: .termsOfUse),
-            PolicyInfo(icon: "hand.raised", iconColor: .purple, title: "Privacy Policy", type: .privacyPolicy),
+            PolicyInfo(
+                icon: "newspaper",
+                iconColor: .blue,
+                title: "Terms of Use",
+                type: .termsOfUse
+            ),
+            PolicyInfo(
+                icon: "hand.raised",
+                iconColor: .purple,
+                title: "Privacy Policy",
+                type: .privacyPolicy
+            ),
         ]
     }
 
@@ -416,13 +441,15 @@ struct ProfileView: View {
         }
 
         do {
-            let doc = try await db.collection("subscriptions").document(userID).getDocument()
+            let doc = try await db.collection("subscriptions").document(userID)
+                .getDocument()
             let data = doc.data()
 
             await MainActor.run {
                 subscriptionStatus = data?["status"] as? String
                 subscriptionProductID = data?["productID"] as? String
-                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
+                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?
+                    .dateValue()
                 isLoadingSubscription = false
             }
         } catch {
@@ -452,7 +479,7 @@ struct ProfileView: View {
 
         do {
             if let data = try await item.loadTransferable(type: Data.self),
-               let uiImage = UIImage(data: data)
+                let uiImage = UIImage(data: data)
             {
                 await MainActor.run {
                     avatarImage = Image(uiImage: uiImage)
@@ -463,14 +490,20 @@ struct ProfileView: View {
 
                 await MainActor.run {
                     isUploadingPhoto = false
-                    alertMessage = AlertMessage(title: "Success", message: "Profile photo updated!")
+                    alertMessage = AlertMessage(
+                        title: "Success",
+                        message: "Profile photo updated!"
+                    )
                 }
             }
         } catch {
             await MainActor.run {
                 isUploadingPhoto = false
                 avatarImage = nil
-                alertMessage = AlertMessage(title: "Error", message: "Failed to load image")
+                alertMessage = AlertMessage(
+                    title: "Error",
+                    message: "Failed to load image"
+                )
             }
         }
     }

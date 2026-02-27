@@ -12,7 +12,7 @@ struct RootView: View {
             case .authenticated:
                 ContentView() // ← ContentView bạn đã có
             case .unauthenticated:
-                LoginView()
+                SignInView()
             }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)

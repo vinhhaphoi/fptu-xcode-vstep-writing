@@ -165,13 +165,15 @@ struct PrimaryActionCard: View {
             }
             .padding(20)
             // ← REPLACED LinearGradient + clipShape + shadow with glassEffect
-            .glassEffect(.regular.tint(.blue).interactive(), in: .rect(cornerRadius: 18))
+            .glassEffect(
+                .regular.tint(.blue).interactive(),
+                in: .rect(cornerRadius: 18)
+            )
         }
         .buttonStyle(.plain)
         .padding(.horizontal)
     }
 }
-
 
 // MARK: - Recent Activity Section
 struct RecentActivitySection: View {
@@ -374,9 +376,14 @@ struct ActivityStackCard: View {
                     Image(systemName: "clock")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text(sub.submittedAt, style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // CHANGED: replaced style: .relative with formatted absolute datetime
+                    Text(
+                        sub.submittedAt,
+                        format: .dateTime.day().month(.abbreviated).hour()
+                            .minute()
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
             }
 
