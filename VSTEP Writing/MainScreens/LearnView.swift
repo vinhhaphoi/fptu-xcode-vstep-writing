@@ -445,6 +445,9 @@ struct TaskQuestionListView: View {
             .padding(.top, 16)
             .background(Color(.systemGroupedBackground))
         }
+        .refreshable {
+            await onRefresh?()
+        }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
