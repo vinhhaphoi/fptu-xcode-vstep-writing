@@ -1,6 +1,7 @@
 // SecuritiesInfoView.swift
 
 import FirebaseAuth
+import FirebaseFirestore
 import SwiftUI
 
 struct SecuritiesInfoView: View {
@@ -30,7 +31,7 @@ struct SecuritiesInfoView: View {
             ChangePasswordView()
         }
         .sheet(isPresented: $showDeleteAccountSheet) {
-            DeleteAccountView()
+            DeleteAccountRequestView()
                 .environmentObject(authManager)
         }
         .alert(item: $alertMessage) { alert in
@@ -189,7 +190,7 @@ struct SecuritiesInfoView: View {
 
             HStack {
                 Text(
-                    "Permanently removes your account and all associated data."
+                    "Submit a request to delete your account. An admin will review and process it."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -293,8 +294,7 @@ struct ChangePasswordView: View {
                     .disabled(!isFormValid || isLoading)
                     .buttonStyle(.plain)
                     .glassEffect(
-                        .regular.tint(isFormValid ? .blue : .gray),
-                        in: .rect(cornerRadius: 16)
+                        .regular.tint(isFormValid ? .blue : .gray)
                     )
                     .padding(.horizontal)
                 }
@@ -305,7 +305,7 @@ struct ChangePasswordView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
             }
             .alert("Password Updated", isPresented: $showSuccess) {
@@ -385,34 +385,36 @@ struct ChangePasswordView: View {
     }
 }
 
-// MARK: - DeleteAccountView
-struct DeleteAccountView: View {
+// MARK: - DeleteAccountRequestView
+struct DeleteAccountRequestView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authManager: AuthenticationManager
 
-    @State private var confirmText = ""
+    @State private var reason = ""
+    @State private var hasReadTerms = false
     @State private var isLoading = false
     @State private var errorMessage = ""
-    @State private var hasReadTerms = false
+    @State private var showSuccess = false
 
-    private let requiredConfirmText = "DELETE"
+    private let db = Firestore.firestore()
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    // Warning header
-                    VStack(spacing: 12) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.red)
 
-                        Text("Delete Account")
+                    // Info header
+                    VStack(spacing: 12) {
+                        Image(systemName: "clock.badge.questionmark")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.orange)
+
+                        Text("Request Account Deletion")
                             .font(.title2.bold())
                             .foregroundStyle(.primary)
 
                         Text(
-                            "This action is **permanent** and cannot be undone."
+                            "Your request will be reviewed by an admin. You will be notified once it is processed."
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -466,6 +468,25 @@ struct DeleteAccountView: View {
                         .padding(.horizontal)
                     }
 
+                    // Reason input (optional)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Reason (optional)")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 24)
+
+                        TextField(
+                            "Tell us why you want to leave...",
+                            text: $reason,
+                            axis: .vertical
+                        )
+                        .lineLimit(3...5)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .glassEffect(in: .rect(cornerRadius: 16))
+                        .padding(.horizontal)
+                    }
+
                     // Terms checkbox
                     Button {
                         withAnimation { hasReadTerms.toggle() }
@@ -479,7 +500,7 @@ struct DeleteAccountView: View {
                             .foregroundStyle(hasReadTerms ? .blue : .secondary)
 
                             Text(
-                                "I understand that deleting my account is permanent and all my data will be lost forever."
+                                "I understand that once approved, my account and all associated data will be permanently deleted."
                             )
                             .font(.caption)
                             .foregroundStyle(.primary)
@@ -494,24 +515,6 @@ struct DeleteAccountView: View {
                     .glassEffect()
                     .padding(.horizontal)
 
-                    // Confirm input
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Type **\(requiredConfirmText)** to confirm")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 24)
-
-                        HStack {
-                            TextField("Type DELETE here", text: $confirmText)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.characters)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
-                        }
-                        .glassEffect()
-                        .padding(.horizontal)
-                    }
-
                     if !errorMessage.isEmpty {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.circle.fill")
@@ -524,26 +527,25 @@ struct DeleteAccountView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    // Delete button
-                    Button(role: .destructive) {
-                        Task { await handleDeleteAccount() }
+                    // Submit request button
+                    Button {
+                        Task { await handleRequestDeletion() }
                     } label: {
                         Group {
                             if isLoading {
                                 ProgressView().tint(.white)
                             } else {
-                                Text("Permanently Delete Account")
+                                Text("Submit Deletion Request")
                                     .fontWeight(.semibold)
-                                    .foregroundStyle(.white)
                             }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                     }
-                    .disabled(!isDeleteEnabled || isLoading)
+                    .disabled(!hasReadTerms || isLoading)
                     .buttonStyle(.plain)
                     .glassEffect(
-                        .regular.tint(isDeleteEnabled ? .red : .gray)
+                        .regular.tint(hasReadTerms ? .orange : .gray)
                     )
                     .padding(.horizontal)
                     .padding(.bottom)
@@ -555,16 +557,22 @@ struct DeleteAccountView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
+            }
+            .alert("Request Submitted", isPresented: $showSuccess) {
+                Button("OK") {
+                    // authManager listens to auth state change and navigates to login automatically
+                }
+            } message: {
+                Text(
+                    "Your account has been disabled and your deletion request has been sent. An admin will review and process it shortly."
+                )
             }
         }
     }
 
-    private var isDeleteEnabled: Bool {
-        hasReadTerms && confirmText == requiredConfirmText
-    }
-
+    // MARK: - Deletion Item Row
     private func deletionItem(icon: String, color: Color, text: String)
         -> some View
     {
@@ -584,14 +592,65 @@ struct DeleteAccountView: View {
         .padding(.vertical, 14)
     }
 
-    private func handleDeleteAccount() async {
+    // MARK: - Submit Request to Firestore
+    private func handleRequestDeletion() async {
         isLoading = true
         errorMessage = ""
         defer { isLoading = false }
 
+        guard let uid = Auth.auth().currentUser?.uid else {
+            errorMessage = "You are not signed in."
+            return
+        }
+
         do {
-            try await authManager.deleteAccount()
-            dismiss()
+            // Step 1: Check if a request already exists
+            let existingDoc =
+                try await db
+                .collection("deleteRequests")
+                .document(uid)
+                .getDocument()
+
+            if existingDoc.exists {
+                let currentStatus =
+                    existingDoc.data()?["status"] as? String ?? ""
+
+                if currentStatus == "pending" {
+                    errorMessage =
+                        "You already have a pending deletion request. Please wait for admin review."
+                    return
+                } else if currentStatus == "approved" {
+                    errorMessage =
+                        "Your deletion request has already been approved."
+                    return
+                }
+                // Allow re-submit only if status is "rejected"
+            }
+
+            let requestData: [String: Any] = [
+                "requestedAt": Timestamp(date: Date()),
+                "status": "pending",
+                "reason": reason.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ),
+            ]
+
+            // Step 2: Write or overwrite delete request
+            try await db
+                .collection("deleteRequests")
+                .document(uid)
+                .setData(requestData)
+
+            // Step 3: Mark user as disabled in Firestore
+            try await db
+                .collection("users")
+                .document(uid)
+                .updateData(["isDisabled": true])
+
+            // Step 4: Sign out immediately
+            try Auth.auth().signOut()
+
+            showSuccess = true
         } catch {
             errorMessage = error.localizedDescription
         }
