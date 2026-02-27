@@ -16,6 +16,7 @@ struct SignInView: View {
     @State private var didAttemptSubmit = false
     @State private var isShowingTerms = false
     @State private var isShowingPrivacy = false
+    @State private var isShowingContact = false
 
     @FocusState private var focusedField: Field?
 
@@ -266,8 +267,6 @@ struct SignInView: View {
     // MARK: - Footer
     private var footerSection: some View {
         VStack(spacing: 10) {
-            // LoginView: "Don't have an account? Sign Up"
-            // SignUpView: "Already have an account? Sign In"
             HStack(spacing: 4) {
                 Text("Don't have an account?")
                     .font(.subheadline)
@@ -281,18 +280,22 @@ struct SignInView: View {
                 Text("By continuing, you agree to our")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Terms") { isShowingTerms = true }  // changed
+                Button("Terms") { isShowingTerms = true }
                     .font(.caption)
                 Text("and")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Privacy Policy") { isShowingPrivacy = true }  // changed
+                Button("Privacy Policy") { isShowingPrivacy = true }
                     .font(.caption)
             }
+
+            // Contact us link
+            Button("Need help? Contact us") { isShowingContact = true }
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, 32)
-        // Attach sheets here
         .sheet(isPresented: $isShowingTerms) {
             TermsOfUseView()
                 .presentationDetents([.large])
@@ -302,6 +305,19 @@ struct SignInView: View {
             PrivacyPolicyView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        // Contact sheet
+        .sheet(isPresented: $isShowingContact) {
+            NavigationStack {
+                ContactInfoView()
+//                    .toolbar {
+//                        ToolbarItem(placement: .topBarTrailing) {
+//                            Button("Done") { isShowingContact = false }
+//                        }
+//                    }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
     }
 
