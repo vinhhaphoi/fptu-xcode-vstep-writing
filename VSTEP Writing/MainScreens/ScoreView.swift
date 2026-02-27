@@ -8,10 +8,10 @@ struct QuestionAttemptGroup: Identifiable {
     let question: VSTEPQuestion?
     let attempts: [UserSubmission]
 
-    var latestAttempt: UserSubmission      { attempts[0] }
+    var latestAttempt: UserSubmission { attempts[0] }
     var previousAttempts: [UserSubmission] { Array(attempts.dropFirst()) }
-    var attemptCount: Int                  { attempts.count }
-    var bestScore: Double?                 { attempts.compactMap(\.score).max() }
+    var attemptCount: Int { attempts.count }
+    var bestScore: Double? { attempts.compactMap(\.score).max() }
 }
 
 // MARK: - ScoreView
@@ -27,10 +27,14 @@ struct ScoreView: View {
                 QuestionAttemptGroup(
                     questionId: questionId,
                     question: firebaseService.questionMap[questionId],
-                    attempts: attempts.sorted { $0.submittedAt > $1.submittedAt }
+                    attempts: attempts.sorted {
+                        $0.submittedAt > $1.submittedAt
+                    }
                 )
             }
-            .sorted { $0.latestAttempt.submittedAt > $1.latestAttempt.submittedAt }
+            .sorted {
+                $0.latestAttempt.submittedAt > $1.latestAttempt.submittedAt
+            }
     }
 
     private var gradedSubmissions: [UserSubmission] {
@@ -139,7 +143,7 @@ struct QuestionAttemptCard: View {
         switch group.question?.taskType {
         case "task1": return "Task 1"
         case "task2": return "Task 2"
-        default:      return "Essay"
+        default: return "Essay"
         }
     }
 
@@ -159,20 +163,24 @@ struct QuestionAttemptCard: View {
 
                     HStack(spacing: 8) {
                         BadgeLabel(text: taskBadgeText, color: taskColor)
-//
-//                        if group.attemptCount > 1 {
-//                            BadgeLabel(
-//                                text: "\(group.attemptCount) attempts",
-//                                color: .secondary
-//                            )
-//                        }
+                        //
+                        //                        if group.attemptCount > 1 {
+                        //                            BadgeLabel(
+                        //                                text: "\(group.attemptCount) attempts",
+                        //                                color: .secondary
+                        //                            )
+                        //                        }
 
                         Image(systemName: "clock")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        Text(group.latestAttempt.submittedAt, style: .relative)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Text(
+                            group.latestAttempt.submittedAt,
+                            format: .dateTime.day().month(.abbreviated).hour()
+                                .minute()
+                        )
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     }
                 }
 
@@ -181,10 +189,12 @@ struct QuestionAttemptCard: View {
                 AttemptScoreView(submission: group.latestAttempt)
 
                 if !group.previousAttempts.isEmpty {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 4)
+                    Image(
+                        systemName: isExpanded ? "chevron.up" : "chevron.down"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 4)
                 }
             }
             .padding(.horizontal, 16)
@@ -235,18 +245,14 @@ struct PreviousAttemptRow: View {
                 .frame(width: 32, alignment: .center)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(submission.submittedAt, style: .date)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(submission.submittedAt, style: .relative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // CHANGED: merged date + relative into single absolute datetime
+                Text(
+                    submission.submittedAt,
+                    format: .dateTime.day().month(.abbreviated).year().hour()
+                        .minute()
+                )
+                .font(.subheadline)
+                .foregroundColor(.secondary)
             }
 
             Spacer()
@@ -267,19 +273,19 @@ struct AttemptScoreView: View {
     private var scoreColor: Color {
         guard let score = submission.score else { return .secondary }
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 
     private var statusColor: Color {
         switch submission.status {
         case .submitted: return .blue
-        case .grading:   return .orange
-        case .graded:    return .green
-        case .failed:    return .red
-        case .draft:     return .secondary
+        case .grading: return .orange
+        case .graded: return .green
+        case .failed: return .red
+        case .draft: return .secondary
         }
     }
 
@@ -287,9 +293,11 @@ struct AttemptScoreView: View {
         if let score = submission.score {
             VStack(spacing: 1) {
                 Text(String(format: "%.1f", score))
-                    .font(compact
-                          ? .subheadline.bold().monospacedDigit()
-                          : .title3.bold().monospacedDigit())
+                    .font(
+                        compact
+                            ? .subheadline.bold().monospacedDigit()
+                            : .title3.bold().monospacedDigit()
+                    )
                     .foregroundColor(scoreColor)
                 Text("/ 10")
                     .font(.caption2)
@@ -334,9 +342,9 @@ struct ScoreHeaderView: View {
     private var scoreColor: Color {
         guard let score = averageScore else { return .secondary }
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 

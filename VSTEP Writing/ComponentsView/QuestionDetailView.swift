@@ -21,7 +21,7 @@ struct QuestionDetailView: View {
     private var wordCount: Int {
         essayText.split(separator: " ").filter { !$0.isEmpty }.count
     }
-//    private var minWords: Int { question.isTask1 ? 150 : 250 }
+    //    private var minWords: Int { question.isTask1 ? 150 : 250 }
     private var minWords: Int { 10 }
 
     var body: some View {
@@ -72,7 +72,9 @@ struct QuestionDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Once submitted, you cannot edit this attempt. Make sure your essay is complete.")
+            Text(
+                "Once submitted, you cannot edit this attempt. Make sure your essay is complete."
+            )
         }
     }
 
@@ -177,7 +179,10 @@ struct QuestionDetailView: View {
                                 Text(step)
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                    .fixedSize(
+                                        horizontal: false,
+                                        vertical: true
+                                    )
                             }
                         }
                     }
@@ -208,10 +213,12 @@ struct QuestionDetailView: View {
                     Text("Beta feature")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.orange)
-                    Text("In-app writing may have limited experience. For best results, write offline and paste your essay here.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        "In-app writing may have limited experience. For best results, write offline and paste your essay here."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(12)
@@ -230,7 +237,9 @@ struct QuestionDetailView: View {
                 Spacer()
                 Text("\(wordCount) / \(minWords) words min")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(wordCount >= minWords ? taskColor : .secondary)
+                    .foregroundColor(
+                        wordCount >= minWords ? taskColor : .secondary
+                    )
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .glassEffect(in: .rect(cornerRadius: 8))
@@ -283,10 +292,12 @@ struct QuestionDetailView: View {
 
             // Hint when disabled
             if wordCount < minWords {
-                Text("Write at least \(minWords - wordCount) more word\(minWords - wordCount == 1 ? "" : "s") to submit.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                Text(
+                    "Write at least \(minWords - wordCount) more word\(minWords - wordCount == 1 ? "" : "s") to submit."
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding()
@@ -338,7 +349,10 @@ private struct SubmissionReviewView: View {
                         Capsule().fill(Color(.systemFill)).frame(height: 6)
                         Capsule()
                             .fill(scoreColor(score))
-                            .frame(width: geo.size.width * score / 10, height: 6)
+                            .frame(
+                                width: geo.size.width * score / 10,
+                                height: 6
+                            )
                             .animation(.easeOut(duration: 0.6), value: score)
                     }
                 }
@@ -364,7 +378,10 @@ private struct SubmissionReviewView: View {
             } else {
                 HStack(spacing: 14) {
                     ZStack {
-                        Circle().fill(Color.orange.opacity(0.15)).frame(width: 44, height: 44)
+                        Circle().fill(Color.orange.opacity(0.15)).frame(
+                            width: 44,
+                            height: 44
+                        )
                         Image(systemName: "clock.fill")
                             .foregroundColor(.orange)
                             .font(.title3)
@@ -372,10 +389,12 @@ private struct SubmissionReviewView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Awaiting review")
                             .font(.subheadline.weight(.semibold))
-                        Text("Your essay is with our reviewers. Your score will appear here once ready.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Your essay is with our reviewers. Your score will appear here once ready."
+                        )
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -420,9 +439,9 @@ private struct SubmissionReviewView: View {
 
     private func scoreColor(_ score: Double) -> Color {
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 }
@@ -437,8 +456,13 @@ struct GradingHistorySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    ForEach(Array(history.enumerated()), id: \.offset) { index, sub in
-                        HistoryAttemptCard(submission: sub, attemptNumber: index + 1)
+                    ForEach(Array(history.enumerated()), id: \.offset) {
+                        index,
+                        sub in
+                        HistoryAttemptCard(
+                            submission: sub,
+                            attemptNumber: index + 1
+                        )
                     }
                 }
                 .padding()
@@ -448,7 +472,9 @@ struct GradingHistorySheet: View {
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
+                    Button {
+                        dismiss()
+                    } label: {
                         Image(systemName: "xmark")
                     }
                     .tint(.red)
@@ -519,13 +545,20 @@ private struct HistoryAttemptCard: View {
             }
 
             HStack {
-                Label("\(submission.wordCount) words", systemImage: "text.alignleft")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Label(
+                    "\(submission.wordCount) words",
+                    systemImage: "text.alignleft"
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
                 Spacer()
-                Text(submission.submittedAt, style: .relative)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Text(
+                    submission.submittedAt,
+                    format: .dateTime.day().month(.abbreviated).year().hour()
+                        .minute()
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
         }
         .padding()
@@ -544,9 +577,9 @@ private struct HistoryAttemptCard: View {
 
     private func scoreColor(_ score: Double) -> Color {
         switch score {
-        case 8...:  return .green
+        case 8...: return .green
         case 6..<8: return .orange
-        default:    return .red
+        default: return .red
         }
     }
 }
@@ -558,11 +591,11 @@ struct SubmissionStatusTracker: View {
 
     private var currentStep: Int {
         switch status {
-        case .draft:     return -1
+        case .draft: return -1
         case .submitted: return 0
-        case .grading:   return 1
-        case .graded:    return 2
-        case .failed:    return 2
+        case .grading: return 1
+        case .graded: return 2
+        case .failed: return 2
         }
     }
     private var isFailed: Bool { status == .failed }
@@ -571,9 +604,15 @@ struct SubmissionStatusTracker: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             stepNode(index: 0)
-            ShimmerConnector(filled: currentStep > 0, animated: currentStep == 0 && !isFailed)
+            ShimmerConnector(
+                filled: currentStep > 0,
+                animated: currentStep == 0 && !isFailed
+            )
             stepNode(index: 1)
-            ShimmerConnector(filled: currentStep > 1, animated: currentStep == 1 && !isFailed)
+            ShimmerConnector(
+                filled: currentStep > 1,
+                animated: currentStep == 1 && !isFailed
+            )
             stepNode(index: 2)
         }
         .padding()
@@ -581,13 +620,15 @@ struct SubmissionStatusTracker: View {
     }
 
     private func stepNode(index: Int) -> some View {
-        let isActive    = index == currentStep
+        let isActive = index == currentStep
         let isCompleted = index < currentStep
 
         return VStack(spacing: 6) {
             ZStack {
                 Circle()
-                    .fill(nodeFill(isActive: isActive, isCompleted: isCompleted))
+                    .fill(
+                        nodeFill(isActive: isActive, isCompleted: isCompleted)
+                    )
                     .frame(width: 28, height: 28)
 
                 if isCompleted {
@@ -606,16 +647,18 @@ struct SubmissionStatusTracker: View {
             Text(steps[index])
                 .font(.caption2)
                 .fontWeight(isActive ? .semibold : .regular)
-                .foregroundColor((isActive || isCompleted) ? .primary : Color(.tertiaryLabel))
+                .foregroundColor(
+                    (isActive || isCompleted) ? .primary : Color(.tertiaryLabel)
+                )
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
     }
 
     private func nodeFill(isActive: Bool, isCompleted: Bool) -> Color {
-        if isCompleted          { return .blue.opacity(0.7) }
+        if isCompleted { return .blue.opacity(0.7) }
         if isActive && isFailed { return .red }
-        if isActive             { return .blue }
+        if isActive { return .blue }
         return Color(.secondarySystemFill)
     }
 }
@@ -640,9 +683,12 @@ struct ShimmerConnector: View {
                         .fill(
                             LinearGradient(
                                 stops: [
-                                    .init(color: .clear,               location: 0),
-                                    .init(color: .white.opacity(0.85), location: 0.5),
-                                    .init(color: .clear,               location: 1),
+                                    .init(color: .clear, location: 0),
+                                    .init(
+                                        color: .white.opacity(0.85),
+                                        location: 0.5
+                                    ),
+                                    .init(color: .clear, location: 1),
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
@@ -659,7 +705,9 @@ struct ShimmerConnector: View {
         .onAppear {
             guard animated else { return }
             phase = -0.45
-            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+            withAnimation(
+                .linear(duration: 1.0).repeatForever(autoreverses: false)
+            ) {
                 phase = 1.0
             }
         }
