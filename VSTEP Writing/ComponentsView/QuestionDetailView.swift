@@ -48,6 +48,16 @@ struct QuestionDetailView: View {
         .navigationTitle("Question \(questionNumber)")
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .destructiveAction) {
+                Button {
+                    //
+                } label: {
+                    Image(systemName: "exclamationmark.circle")
+                }
+                .tint(.red)
+            }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+
             if hasHistory {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -56,6 +66,7 @@ struct QuestionDetailView: View {
                         Image(systemName: "clock.arrow.circlepath")
                     }
                 }
+
             }
         }
         .sheet(isPresented: $showHistorySheet) {
