@@ -311,6 +311,7 @@ struct NotificationView: View {
         defer { isLoading = false }
         notifications =
             (try? await NotificationService.shared.fetchNotifications()) ?? []
+        await updateAppBadge()
     }
 
     private func markAsRead(_ item: AppNotification) async {
@@ -319,6 +320,7 @@ struct NotificationView: View {
         if let index = notifications.firstIndex(where: { $0.id == id }) {
             notifications[index].isRead = true
         }
+        await updateAppBadge()
     }
 
     private func markAllAsRead() async {
@@ -334,13 +336,22 @@ struct NotificationView: View {
         for index in notifications.indices {
             notifications[index].isRead = true
         }
+        await updateAppBadge()
     }
 
     private func deleteAllNotifications() async {
         await NotificationService.shared.deleteAllNotifications()
         notifications = []
+        await updateAppBadge()
+    }
+
+    // Update the app icon badge to match the current unread count
+    private func updateAppBadge() async {
+        let count = notifications.filter { !$0.isRead }.count
+        try? await UNUserNotificationCenter.current().setBadgeCount(count)
     }
 }
+
 
 // MARK: - NotificationRow
 struct NotificationRow: View {
@@ -495,3 +506,4 @@ struct SearchResultRow: View {
         .buttonStyle(.plain)
     }
 }
+
