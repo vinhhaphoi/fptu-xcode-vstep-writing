@@ -9,6 +9,8 @@ struct LearnView: View {
     @State private var showError = false
     @State private var errorMsg = ""
     @State private var selectedRankID: String? = nil
+    @State private var searchText = ""
+    @State private var isSearchPresented = false
 
     private let cacheKey = "cached_latest_submissions"
 
@@ -25,6 +27,53 @@ struct LearnView: View {
         return VSTEPRank.allRanks.filter { $0.id == id }
     }
 
+    private var searchResults: [VSTEPQuestion] {
+        guard !searchText.isEmpty else { return [] }
+        return firebaseService.questions.filter {
+            $0.title.localizedCaseInsensitiveContains(searchText)
+                || $0.difficulty.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    // MARK: - Search Content
+    private var searchContent: some View {
+        Group {
+            if searchResults.isEmpty {
+                emptySearchBlock
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(
+                        Array(searchResults.enumerated()),
+                        id: \.element.questionId
+                    ) { index, question in
+                        SearchResultRow(question: question)
+                        if index < searchResults.count - 1 {
+                            Divider().padding(.leading, 70)
+                        }
+                    }
+                }
+                .glassEffect(in: .rect(cornerRadius: 16))
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private var emptySearchBlock: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("No results for \"\(searchText)\"")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+        .glassEffect(in: .rect(cornerRadius: 16))
+        .padding(.horizontal)
+    }
+
+
     var body: some View {
         Group {
             if firebaseService.isLoading && firebaseService.questions.isEmpty {
@@ -35,6 +84,12 @@ struct LearnView: View {
                 mainContent
             }
         }
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearchPresented,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search questions..."
+        )
         .navigationTitle("Learn")
         .toolbarTitleDisplayMode(.large)
         .background(Color(.systemGroupedBackground))
@@ -54,24 +109,27 @@ struct LearnView: View {
     private var mainContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
-                RankFilterRow(
-                    ranks: VSTEPRank.allRanks,
-                    selectedID: $selectedRankID
-                )
-
-                ForEach(displayedRanks) { rank in
-                    RankSection(
-                        rank: rank,
-                        task1Questions: task1Questions,
-                        task2Questions: task2Questions,
-                        submittedIds: submittedIds,
-                        latestSubmissions: latestSubmissions,
-                        allSubmissions: allSubmissions,
-                        onSubmit: handleSubmit,
-                        onRefresh: loadData
+                // Switch giua search results va normal content
+                if !searchText.isEmpty {
+                    searchContent
+                } else {
+                    RankFilterRow(
+                        ranks: VSTEPRank.allRanks,
+                        selectedID: $selectedRankID
                     )
+                    ForEach(displayedRanks) { rank in
+                        RankSection(
+                            rank: rank,
+                            task1Questions: task1Questions,
+                            task2Questions: task2Questions,
+                            submittedIds: submittedIds,
+                            latestSubmissions: latestSubmissions,
+                            allSubmissions: allSubmissions,
+                            onSubmit: handleSubmit,
+                            onRefresh: loadData
+                        )
+                    }
                 }
-
                 Spacer(minLength: 40)
             }
             .padding(.vertical)
