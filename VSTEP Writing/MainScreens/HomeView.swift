@@ -10,7 +10,6 @@ struct HomeView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
-    // Navigation destinations
     @State private var navigateToGrammar = false
     @State private var navigateToScore = false
     @State private var navigateToTips = false
@@ -48,11 +47,9 @@ struct HomeView: View {
                         onScoreViewTap: { navigateToScore = true },
                         onLearnViewTap: { navigateToPractice = true }
                     )
-
                     BlogSection()
+                    Spacer(minLength: 50)
                 }
-
-                Spacer(minLength: 50)
             }
             .padding(.vertical)
         }
@@ -95,7 +92,8 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "text.book.closed")
             }
-            .tint(.green)
+            // Updated: BrandColor.primary from BrandColors.swift
+            .tint(BrandColor.primary)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
         ToolbarItem(placement: .topBarTrailing) {
@@ -164,9 +162,9 @@ struct PrimaryActionCard: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
             .padding(20)
-            // ← REPLACED LinearGradient + clipShape + shadow with glassEffect
+            // Updated: BrandColor.primary replaces .blue
             .glassEffect(
-                .regular.tint(.blue).interactive(),
+                .regular.tint(BrandColor.primary).interactive(),
                 in: .rect(cornerRadius: 18)
             )
         }
@@ -265,7 +263,6 @@ struct ActivityStackCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Entry rows
             ForEach(Array(visibleEntries.enumerated()), id: \.element.id) {
                 index,
                 sub in
@@ -279,7 +276,6 @@ struct ActivityStackCard: View {
                 }
             }
 
-            // Expand / Collapse / Show All controls
             if entries.count > 1 {
                 Divider().padding(.leading, 56)
 
@@ -316,7 +312,8 @@ struct ActivityStackCard: View {
                         } label: {
                             Text("Show all \(entries.count)")
                                 .font(.caption.bold())
-                                .foregroundColor(.blue)
+                                // Updated: BrandColor.primary replaces .blue
+                                .foregroundColor(BrandColor.primary)
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, 16)
@@ -338,7 +335,6 @@ struct ActivityStackCard: View {
                 }
             }
         }
-        // ← REPLACED .background + .clipShape + .shadow with .glassEffect
         .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }
@@ -372,11 +368,12 @@ struct ActivityStackCard: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                }
 
+                HStack(spacing: 4) {
                     Image(systemName: "clock")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    // CHANGED: replaced style: .relative with formatted absolute datetime
                     Text(
                         sub.submittedAt,
                         format: .dateTime.day().month(.abbreviated).hour()
@@ -435,9 +432,10 @@ struct BlogSection: View {
             title: "How to Score 8.0 in Task 2",
             subtitle: "Master argument structure and cohesion",
             category: "Strategy",
-            categoryColor: .blue,
+            // Updated: BrandColor.primary replaces .blue
+            categoryColor: BrandColor.primary,
             systemImage: "doc.text.magnifyingglass",
-            imageColor: .blue
+            imageColor: BrandColor.primary
         ),
         BlogPost(
             id: "2",
@@ -465,17 +463,16 @@ struct BlogSection: View {
                 Text("Blog")
                     .font(.headline)
                 Spacer()
-                Button("View All") { /* Navigate to full blog list */  }
+                Button("View All") {}
                     .font(.subheadline)
-                    .foregroundColor(.blue)
+                    // Updated: BrandColor.primary replaces .blue
+                    .foregroundColor(BrandColor.primary)
             }
             .padding(.horizontal)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
-                    ForEach(blogs) { post in
-                        BlogCard(post: post)
-                    }
+                    ForEach(blogs) { post in BlogCard(post: post) }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 4)
@@ -510,7 +507,6 @@ struct BlogCard: View {
         }
         .padding(14)
         .frame(width: 180)
-        // ← REPLACED .background + .clipShape + .shadow with .glassEffect
         .glassEffect(in: .rect(cornerRadius: 16))
     }
 }
@@ -539,10 +535,12 @@ struct StatusBadgeView: View {
         VStack(spacing: 3) {
             Image(systemName: status.icon)
                 .font(.subheadline)
-                .foregroundColor(.blue)
+                // Updated: BrandColor.primary replaces .blue
+                .foregroundColor(BrandColor.primary)
             Text(status.displayText)
                 .font(.caption2.weight(.medium))
-                .foregroundColor(.blue)
+                // Updated: BrandColor.primary replaces .blue
+                .foregroundColor(BrandColor.primary)
         }
     }
 }
@@ -578,7 +576,6 @@ struct ErrorBannerView: View {
                 .font(.subheadline.weight(.semibold))
         }
         .padding()
-        // ← REPLACED .background + .clipShape with .glassEffect
         .glassEffect(in: .rect(cornerRadius: 12))
         .padding(.horizontal)
     }
@@ -602,7 +599,6 @@ struct EmptyActivityView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
-        // ← REPLACED .background + .clipShape with .glassEffect
         .glassEffect(in: .rect(cornerRadius: 16))
         .padding(.horizontal)
     }

@@ -457,23 +457,23 @@ private struct SubmissionReviewView: View {
                         isExpanded: $suggestionsExpanded,
                         count: suggestions.count
                     ) {
+                        // FIX: boc moi suggestion trong glass card giong CriterionRow de dong deu
                         VStack(spacing: 8) {
                             ForEach(
                                 Array(suggestions.enumerated()),
                                 id: \.offset
                             ) { index, suggestion in
-                                HStack(alignment: .top, spacing: 10) {
+                                HStack(alignment: .top, spacing: 12) {
                                     ZStack {
                                         Circle()
-                                            .fill(Color.blue.opacity(0.7))
-                                            .frame(width: 20, height: 20)
+                                            .fill(Color.blue.opacity(0.15))
+                                            .frame(width: 24, height: 24)
                                         Text("\(index + 1)")
                                             .font(
-                                                .system(size: 11, weight: .bold)
+                                                .system(size: 12, weight: .bold)
                                             )
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(.blue)
                                     }
-                                    .padding(.top, 2)
                                     Text(suggestion.markdownAttributed())
                                         .font(.subheadline)
                                         .foregroundStyle(.primary)
@@ -482,6 +482,10 @@ private struct SubmissionReviewView: View {
                                             vertical: true
                                         )
                                 }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .glassEffect(in: .rect(cornerRadius: 8))
                             }
                         }
                     }
@@ -661,7 +665,8 @@ private struct CriterionRow: View {
                         .glassEffect(in: .capsule)
                 }
                 if let score = criterion.score {
-                    Text(String(format: "%.0f/5", score))
+                    // FIX: doi /5 thanh /10 vi AI tra ve thang 0-10
+                    Text(String(format: "%.1f/10", score))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(criterionScoreColor(score))
                 }
@@ -677,10 +682,11 @@ private struct CriterionRow: View {
         .glassEffect(in: .rect(cornerRadius: 8))
     }
 
+    // FIX: nguong mau theo thang /10 thay vi /5
     private func criterionScoreColor(_ score: Double) -> Color {
         switch score {
-        case 4...: return .green
-        case 2..<4: return .orange
+        case 8...: return .green
+        case 6..<8: return .orange
         default: return .red
         }
     }
@@ -778,7 +784,6 @@ private struct HistoryAttemptCard: View {
                     .regular.tint(Color.blue.opacity(0.1)),
                     in: .capsule
                 )
-
                 statusBadge
             }
 
@@ -853,21 +858,21 @@ private struct HistoryAttemptCard: View {
                     isExpanded: $suggestionsExpanded,
                     count: suggestions.count
                 ) {
+                    // FIX: boc moi suggestion trong glass card giong CriterionRow de dong deu
                     VStack(spacing: 8) {
                         ForEach(
                             Array(suggestions.enumerated()),
                             id: \.offset
                         ) { index, suggestion in
-                            HStack(alignment: .top, spacing: 10) {
+                            HStack(alignment: .top, spacing: 12) {
                                 ZStack {
                                     Circle()
-                                        .fill(Color.blue.opacity(0.7))
-                                        .frame(width: 20, height: 20)
+                                        .fill(Color.blue.opacity(0.15))
+                                        .frame(width: 24, height: 24)
                                     Text("\(index + 1)")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(.white)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.blue)
                                 }
-                                .padding(.top, 2)
                                 Text(suggestion.markdownAttributed())
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
@@ -876,6 +881,10 @@ private struct HistoryAttemptCard: View {
                                         vertical: true
                                     )
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassEffect(in: .rect(cornerRadius: 8))
                         }
                     }
                 }

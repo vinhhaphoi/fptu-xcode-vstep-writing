@@ -1,5 +1,3 @@
-// ContentView.swift
-
 import SwiftUI
 
 struct ContentView: View {
@@ -46,7 +44,6 @@ struct TabBarView: View {
             Tab(role: .search) {
                 NavigationStack {
                     NotificationView()
-                        // Reset badge when user opens notification tab
                         .onAppear {
                             Task { await refreshUnreadCount() }
                         }
@@ -58,10 +55,11 @@ struct TabBarView: View {
             .badge(unreadCount > 0 ? Text("") : nil)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        // Updated: apply brand primary color (#16433F) to selected tab icon
+        .tint(BrandColor.light)  
         .task {
             await refreshUnreadCount()
         }
-        // Auto-update badge when new FCM push arrives
         .onReceive(
             NotificationCenter.default.publisher(
                 for: .didReceivePushNotification

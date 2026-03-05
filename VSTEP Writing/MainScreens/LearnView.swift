@@ -1,8 +1,6 @@
-// LearnView.swift
 import SwiftUI
 
 // MARK: - LearnView
-
 struct LearnView: View {
     @StateObject private var firebaseService = FirebaseService.shared
     @State private var submittedIds: Set<String> = []
@@ -12,7 +10,6 @@ struct LearnView: View {
     @State private var errorMsg = ""
     @State private var selectedRankID: String? = nil
 
-    // Cache key — chi dung cho offline fallback, KHONG inject nguoc khi online
     private let cacheKey = "cached_latest_submissions"
 
     private var task1Questions: [VSTEPQuestion] {
@@ -54,7 +51,6 @@ struct LearnView: View {
     }
 
     // MARK: - Main Content
-
     private var mainContent: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
@@ -84,7 +80,6 @@ struct LearnView: View {
     }
 
     // MARK: - Submit Handler
-
     private func handleSubmit(question: VSTEPQuestion, essayText: String) {
         let wordCount =
             essayText
@@ -127,11 +122,9 @@ struct LearnView: View {
                             history[0] = updated
                             self.allSubmissions[question.questionId] = history
                         }
-                        // Luu cache moi lan AI cap nhat trang thai
                         self.saveLocalCache()
                     },
                     onTimeout: {
-                        // Timeout: danh dau failed, giu lai content
                         var timedOut = newSubmission
                         timedOut.status = .failed
                         self.latestSubmissions[question.questionId] = timedOut
@@ -150,7 +143,6 @@ struct LearnView: View {
                     }
                 )
             } catch {
-                // Rollback optimistic update neu submit that bai
                 await MainActor.run {
                     latestSubmissions.removeValue(forKey: question.questionId)
                     allSubmissions[question.questionId]?.removeFirst()
@@ -166,8 +158,6 @@ struct LearnView: View {
     }
 
     // MARK: - Data Loading
-    // Firestore la source of truth — cache chi dung khi offline (fetch that bai)
-
     private func loadData() async {
         do {
             try await firebaseService.fetchQuestions()
@@ -185,21 +175,12 @@ struct LearnView: View {
                     allMap[sub.questionId, default: []].append(sub)
                 }
 
-                // Firestore = source of truth
-                // KHONG inject cache nguoc — neu Firestore khong co record thi khong hien
                 latestSubmissions = latestMap
                 allSubmissions = allMap
                 submittedIds = Set(latestMap.keys)
-
-                // Cap nhat cache theo Firestore hien tai (overwrite, khong merge)
                 saveLocalCache()
-            } else {
-                // fetchUserSubmissions tra ve nil nhung khong throw
-                // Giu nguyen UI hien tai, khong thay doi gi
             }
         } catch {
-            // Fetch that bai hoan toan (offline / network error)
-            // Fallback ve cache de hien thi du lieu cu
             let cached = loadLocalCache()
             if !cached.isEmpty {
                 latestSubmissions = cached
@@ -212,12 +193,9 @@ struct LearnView: View {
     }
 
     // MARK: - Local Cache Helpers
-    // Cache chi luu submission co score (graded) de dung khi offline
-
     private func saveLocalCache() {
         guard let userId = firebaseService.currentUserId else { return }
         let key = "\(cacheKey)_\(userId)"
-        // Chi luu graded submission (co score) — bo qua submitted/grading/failed
         let toCache = latestSubmissions.filter { $0.value.score != nil }
         if let encoded = try? JSONEncoder().encode(toCache) {
             UserDefaults.standard.set(encoded, forKey: key)
@@ -238,7 +216,6 @@ struct LearnView: View {
 }
 
 // MARK: - Rank Filter Row
-
 struct RankFilterRow: View {
     let ranks: [VSTEPRank]
     @Binding var selectedID: String?
@@ -267,7 +244,9 @@ struct RankFilterRow: View {
                             .padding(.vertical, 8)
                             .glassEffect(
                                 .regular.tint(
-                                    selectedID == nil ? .blue : .clear
+                                    // Updated: BrandColor.primary replaces .blue for "All" selected state
+                                    selectedID == nil
+                                        ? BrandColor.primary : .clear
                                 ).interactive(),
                                 in: Capsule()
                             )
@@ -284,6 +263,7 @@ struct RankFilterRow: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .glassEffect(
+                                    // Rank colors (blue/purple/red) are classification colors, kept as-is
                                     .regular.tint(
                                         selectedID == rank.id
                                             ? rank.color : .clear
@@ -303,7 +283,6 @@ struct RankFilterRow: View {
 }
 
 // MARK: - Rank Section
-
 struct RankSection: View {
     let rank: VSTEPRank
     let task1Questions: [VSTEPQuestion]
@@ -330,10 +309,9 @@ struct RankSection: View {
             .padding(.horizontal)
 
             VStack(spacing: 0) {
-                ForEach(
-                    Array(rank.taskCategories.enumerated()),
-                    id: \.offset
-                ) { index, category in
+                ForEach(Array(rank.taskCategories.enumerated()), id: \.offset) {
+                    index,
+                    category in
                     let pool =
                         category.taskType == "task1"
                         ? filtered(task1Questions)
@@ -399,7 +377,6 @@ struct RankSection: View {
 }
 
 // MARK: - Task Question List
-
 struct TaskQuestionListView: View {
     let title: String
     let questions: [VSTEPQuestion]
@@ -445,9 +422,7 @@ struct TaskQuestionListView: View {
             .padding(.top, 16)
             .background(Color(.systemGroupedBackground))
         }
-        .refreshable {
-            await onRefresh?()
-        }
+        .refreshable { await onRefresh?() }
         .background(Color(.systemGroupedBackground))
         .navigationTitle(title)
         .toolbarTitleDisplayMode(.inline)
@@ -475,7 +450,6 @@ struct TaskQuestionListView: View {
 }
 
 // MARK: - Question Row
-
 private struct QuestionRow: View {
     let number: Int
     let question: VSTEPQuestion
@@ -545,7 +519,7 @@ private struct QuestionRow: View {
                     ProgressView().scaleEffect(0.6)
                     Text("AI Grading")
                         .font(.callout)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.primary)
                 }
             } else {
                 HStack(spacing: 4) {
@@ -570,7 +544,6 @@ private struct QuestionRow: View {
 }
 
 // MARK: - Loading View
-
 struct LearnLoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -585,7 +558,6 @@ struct LearnLoadingView: View {
 }
 
 // MARK: - Empty View
-
 struct LearnEmptyView: View {
     let onReload: () -> Void
 
@@ -598,6 +570,8 @@ struct LearnEmptyView: View {
                 .foregroundStyle(.secondary)
             Button("Reload", action: onReload)
                 .buttonStyle(.bordered)
+                // Updated: BrandColor.primary replaces default system blue
+                .tint(BrandColor.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemGroupedBackground))
@@ -605,7 +579,6 @@ struct LearnEmptyView: View {
 }
 
 // MARK: - VSTEP Rank Model
-
 struct VSTEPRank: Identifiable {
     let id: String
     let cefr: String
