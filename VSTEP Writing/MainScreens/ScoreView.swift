@@ -2,11 +2,22 @@
 import SwiftUI
 
 // MARK: - Question Attempt Group Model
-struct QuestionAttemptGroup: Identifiable {
+struct QuestionAttemptGroup: Identifiable, Hashable {
     var id: String { questionId }
     let questionId: String
     let question: VSTEPQuestion?
     let attempts: [UserSubmission]
+
+    // Hashable & Equatable conformance based on stable identity
+    static func == (lhs: QuestionAttemptGroup, rhs: QuestionAttemptGroup)
+        -> Bool
+    {
+        lhs.questionId == rhs.questionId
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(questionId)
+    }
 
     var latestAttempt: UserSubmission { attempts[0] }
     var previousAttempts: [UserSubmission] { Array(attempts.dropFirst()) }
@@ -20,6 +31,8 @@ struct ScoreView: View {
     @State private var submissions: [UserSubmission] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
+    // Navigation destination state
+    @State private var selectedGroup: QuestionAttemptGroup? = nil
 
     private var groupedByQuestion: [QuestionAttemptGroup] {
         Dictionary(grouping: submissions) { $0.questionId }
@@ -95,7 +108,9 @@ struct ScoreView: View {
                         .padding(.horizontal)
 
                         ForEach(groupedByQuestion) { group in
-                            QuestionAttemptCard(group: group)
+                            QuestionAttemptCard(group: group) {
+                                selectedGroup = group
+                            }
                         }
                     }
                 }
@@ -108,6 +123,20 @@ struct ScoreView: View {
         .navigationTitle("Score")
         .toolbarTitleDisplayMode(.large)
         .refreshable { await loadSubmissions() }
+        // Navigate to QuestionDetailView khi selectedGroup duoc set
+        .navigationDestination(item: $selectedGroup) { group in
+            if let question = group.question {
+                let questionNumber =
+                    Int(question.questionId.filter(\.isNumber)) ?? 0
+
+                QuestionDetailView(
+                    question: question,
+                    questionNumber: questionNumber,
+                    latestSubmission: group.latestAttempt,
+                    submissionHistory: group.attempts
+                )
+            }
+        }
         .task {
             if firebaseService.questions.isEmpty {
                 try? await firebaseService.fetchQuestions()
@@ -133,6 +162,9 @@ struct ScoreView: View {
 // MARK: - Question Attempt Card
 struct QuestionAttemptCard: View {
     let group: QuestionAttemptGroup
+    // Callback navigate - tach biet khoi expand logic
+    let onNavigate: () -> Void
+
     @State private var isExpanded = false
 
     private var taskColor: Color {
@@ -149,9 +181,9 @@ struct QuestionAttemptCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Latest attempt row — always visible
+            // Latest attempt row — press de navigate, chevron de expand
             HStack(spacing: 14) {
-                // Accent indicator — glass tinted capsule bar
+                // Accent indicator
                 Color.clear
                     .frame(width: 4, height: 68)
                     .glassEffect(.regular.tint(taskColor), in: Capsule())
@@ -163,13 +195,6 @@ struct QuestionAttemptCard: View {
 
                     HStack(spacing: 8) {
                         BadgeLabel(text: taskBadgeText, color: taskColor)
-                        //
-                        //                        if group.attemptCount > 1 {
-                        //                            BadgeLabel(
-                        //                                text: "\(group.attemptCount) attempts",
-                        //                                color: .secondary
-                        //                            )
-                        //                        }
 
                         Image(systemName: "clock")
                             .font(.caption2)
@@ -188,23 +213,33 @@ struct QuestionAttemptCard: View {
 
                 AttemptScoreView(submission: group.latestAttempt)
 
+                // Chevron chi xu ly expand/collapse, khong lien quan navigate
                 if !group.previousAttempts.isEmpty {
-                    Image(
-                        systemName: isExpanded ? "chevron.up" : "chevron.down"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 4)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Image(
+                            systemName: isExpanded
+                                ? "chevron.up" : "chevron.down"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 4)
+                        // Tang vung tap de de bam
+                        .padding(.vertical, 12)
+                        .padding(.trailing, 4)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
+            // Tap card chinh -> navigate
             .onTapGesture {
-                guard !group.previousAttempts.isEmpty else { return }
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    isExpanded.toggle()
-                }
+                onNavigate()
             }
 
             // Previous attempts expandable stack
@@ -215,7 +250,6 @@ struct QuestionAttemptCard: View {
                     Array(group.previousAttempts.reversed().enumerated()),
                     id: \.element.id
                 ) { index, attempt in
-                    // index 0 = oldest = #1, ascending to #(attemptCount-1)
                     PreviousAttemptRow(
                         attemptNumber: index + 1,
                         submission: attempt
@@ -245,7 +279,6 @@ struct PreviousAttemptRow: View {
                 .frame(width: 32, alignment: .center)
 
             VStack(alignment: .leading, spacing: 3) {
-                // CHANGED: merged date + relative into single absolute datetime
                 Text(
                     submission.submittedAt,
                     format: .dateTime.day().month(.abbreviated).year().hour()
