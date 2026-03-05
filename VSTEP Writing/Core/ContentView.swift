@@ -42,36 +42,15 @@ struct TabBarView: View {
             }
 
             Tab(role: .search) {
-                NavigationStack {
-                    NotificationView()
-                        .onAppear {
-                            Task { await refreshUnreadCount() }
-                        }
-                }
+                
             } label: {
-                Label("Notifications", systemImage: "bell")
+                Label("Chat", systemImage: "ellipsis.message")
                     .environment(\.symbolVariants, .none)
             }
-            .badge(unreadCount > 0 ? Text("") : nil)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         // Updated: apply brand primary color (#16433F) to selected tab icon
         .tint(BrandColor.light)  
-        .task {
-            await refreshUnreadCount()
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: .didReceivePushNotification
-            )
-        ) { _ in
-            Task { await refreshUnreadCount() }
-        }
-    }
-
-    private func refreshUnreadCount() async {
-        let all =
-            (try? await NotificationService.shared.fetchNotifications()) ?? []
-        unreadCount = all.filter { !$0.isRead }.count
+        
     }
 }

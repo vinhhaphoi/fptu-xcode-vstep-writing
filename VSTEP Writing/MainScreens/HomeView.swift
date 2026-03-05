@@ -1,3 +1,4 @@
+// HomeView.swift
 import FirebaseAuth
 import SwiftUI
 
@@ -14,6 +15,10 @@ struct HomeView: View {
     @State private var navigateToScore = false
     @State private var navigateToTips = false
     @State private var navigateToPractice = false
+    @State private var navigateToNotification = false
+
+    // Notification badge count
+    @State private var unreadCount = 0
 
     private var displayName: String {
         let user = Auth.auth().currentUser
@@ -58,15 +63,32 @@ struct HomeView: View {
         .toolbarTitleDisplayMode(.large)
         .toolbar { ToolBarItems }
         .refreshable { await loadData() }
-        .task { await loadData() }
+        .task {
+            await loadData()
+            await refreshUnreadCount()
+        }
+        // Lang nghe push notification de cap nhat badge
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .didReceivePushNotification
+            )
+        ) { _ in
+            Task { await refreshUnreadCount() }
+        }
         .navigationDestination(isPresented: $navigateToPractice) { LearnView() }
         .navigationDestination(isPresented: $navigateToGrammar) {
             GrammarView()
         }
         .navigationDestination(isPresented: $navigateToScore) { ScoreView() }
         .navigationDestination(isPresented: $navigateToTips) { TipsView() }
+        .navigationDestination(isPresented: $navigateToNotification) {
+            NotificationView()
+                // Reset badge khi user mo notification
+                .onAppear { Task { await refreshUnreadCount() } }
+        }
     }
 
+    // MARK: - Load Data
     private func loadData() async {
         guard !isLoading else { return }
         isLoading = true
@@ -83,6 +105,13 @@ struct HomeView: View {
         }
     }
 
+    // MARK: - Refresh Unread Count
+    private func refreshUnreadCount() async {
+        let all =
+            (try? await NotificationService.shared.fetchNotifications()) ?? []
+        unreadCount = all.filter { !$0.isRead }.count
+    }
+
     // MARK: - Toolbar
     @ToolbarContentBuilder
     private var ToolBarItems: some ToolbarContent {
@@ -92,7 +121,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "text.book.closed")
             }
-            // Updated: BrandColor.primary from BrandColors.swift
             .tint(BrandColor.primary)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -118,6 +146,31 @@ struct HomeView: View {
                 Image(systemName: "lightbulb")
             }
             .tint(.yellow)
+        }
+        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                navigateToNotification = true
+            } label: {
+                Image(systemName: "bell")
+                    .overlay(alignment: .topTrailing) {
+                        if unreadCount > 0 {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(
+                                        width: unreadCount > 9 ? 16 : 12,
+                                        height: unreadCount > 9 ? 16 : 12
+                                    )
+                                Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                            }
+                            .offset(x: 6, y: -4)
+                        }
+                    }
+            }
+            .tint(.primary)
         }
     }
 }
@@ -162,7 +215,6 @@ struct PrimaryActionCard: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
             .padding(20)
-            // Updated: BrandColor.primary replaces .blue
             .glassEffect(
                 .regular.tint(BrandColor.primary).interactive(),
                 in: .rect(cornerRadius: 18)
@@ -312,7 +364,6 @@ struct ActivityStackCard: View {
                         } label: {
                             Text("Show all \(entries.count)")
                                 .font(.caption.bold())
-                                // Updated: BrandColor.primary replaces .blue
                                 .foregroundColor(BrandColor.primary)
                         }
                         .buttonStyle(.plain)
@@ -432,7 +483,6 @@ struct BlogSection: View {
             title: "How to Score 8.0 in Task 2",
             subtitle: "Master argument structure and cohesion",
             category: "Strategy",
-            // Updated: BrandColor.primary replaces .blue
             categoryColor: BrandColor.primary,
             systemImage: "doc.text.magnifyingglass",
             imageColor: BrandColor.primary
@@ -465,7 +515,6 @@ struct BlogSection: View {
                 Spacer()
                 Button("View All") {}
                     .font(.subheadline)
-                    // Updated: BrandColor.primary replaces .blue
                     .foregroundColor(BrandColor.primary)
             }
             .padding(.horizontal)
@@ -535,11 +584,9 @@ struct StatusBadgeView: View {
         VStack(spacing: 3) {
             Image(systemName: status.icon)
                 .font(.subheadline)
-                // Updated: BrandColor.primary replaces .blue
                 .foregroundColor(BrandColor.primary)
             Text(status.displayText)
                 .font(.caption2.weight(.medium))
-                // Updated: BrandColor.primary replaces .blue
                 .foregroundColor(BrandColor.primary)
         }
     }
