@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject var authManager: AuthenticationManager
+    @EnvironmentObject var firebaseService: FirebaseService
     @AppStorage("isDarkMode") private var isDarkMode = false
 
     // Navigation States
@@ -18,46 +19,38 @@ struct ProfileView: View {
     // Photo Upload States
     @State private var showImagePicker = false
     @State private var selectedImage: PhotosPickerItem?
-    @State private var avatarImage: Image?
-    @State private var isUploadingPhoto = false
-    @State private var alertMessage: AlertMessage?
+    @State private var localAvatarPreview: Image?
 
     // Subscription States
     @State private var subscriptionStatus: String? = nil
     @State private var subscriptionProductID: String? = nil
     @State private var subscriptionExpiry: Date? = nil
     @State private var isLoadingSubscription = true
+    @State private var alertMessage: AlertMessage?
 
     private let db = Firestore.firestore()
 
     var body: some View {
         ScrollView {
-            // Header Card với Avatar
             profileHeaderCard
                 .padding()
 
-            // ── SUBSCRIPTION STATUS ──
             subscriptionStatusCard
                 .padding(.horizontal)
                 .padding(.bottom, 4)
 
-            // Policy Buttons
             policyButtons
                 .padding()
 
-            // Dark Mode Toggle
             darkModeToggle
                 .padding()
 
-            // Contact info button
             ContactInfoButton
                 .padding()
 
-            // Sign Out Button
             signOutButton
                 .padding()
 
-            // App Info Footer
             appInfoFooter
                 .padding(.top, 20)
                 .padding(.bottom, 40)
@@ -70,8 +63,26 @@ struct ProfileView: View {
             selection: $selectedImage,
             matching: .images
         )
-        .onChange(of: selectedImage) { oldValue, newValue in
-            Task { await handleImageSelection(newValue) }
+        .refreshable {
+            await refreshProfile()
+        }
+        .onChange(of: selectedImage) { _, newItem in
+            Task { await handleImageSelection(newItem) }
+        }
+        // Show error alert from FirebaseService avatar upload
+        .onChange(of: firebaseService.avatarUploadError) { _, errorMsg in
+            guard let errorMsg else { return }
+            alertMessage = AlertMessage(title: "Error", message: errorMsg)
+        }
+        // Show success alert when upload completes
+        .onChange(of: firebaseService.isUploadingPhoto) { _, isUploading in
+            guard !isUploading, firebaseService.uploadedAvatarURL != nil,
+                firebaseService.avatarUploadError == nil
+            else { return }
+            alertMessage = AlertMessage(
+                title: "Success",
+                message: "Profile photo updated!"
+            )
         }
         .navigationTitle("Profile")
         .toolbarTitleDisplayMode(.large)
@@ -105,7 +116,10 @@ struct ProfileView: View {
             }
         }
         .toolbar { ToolBarItems }
-        .task { await loadSubscription() }
+        .task {
+            await loadSubscription()
+            await firebaseService.fetchAvatarURL()
+        }
     }
 
     // MARK: - Toolbar
@@ -129,37 +143,78 @@ struct ProfileView: View {
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
                     .overlay {
-                        if isUploadingPhoto {
+                        if firebaseService.isUploadingPhoto {
                             ZStack {
                                 Circle().fill(.ultraThinMaterial)
                                 ProgressView()
                             }
                         }
                     }
-                //
-                //                Button {
-                //                    showImagePicker = true
-                //                } label: {
-                //                    Image(systemName: "camera.fill")
-                //                        .font(.system(size: 14))
-                //                        .foregroundColor(.white)
-                //                        .frame(width: 32, height: 32)
-                //                        .background(Circle().fill(Color.blue))
-                //                        .shadow(radius: 3)
-                //                }
-                //                .disabled(isUploadingPhoto)
-                //                .offset(x: -2, y: -2)
+
+                Button {
+                    showImagePicker = true
+                } label: {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.blue))
+                        .shadow(radius: 3)
+                }
+                .disabled(firebaseService.isUploadingPhoto)
+                .offset(x: -2, y: -2)
             }
         }
         .padding(.vertical, 28)
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Avatar View
+    // Priority: local preview -> uploaded URL -> Firebase Auth URL -> placeholder
+    @ViewBuilder
+    private var avatarView: some View {
+        if let localPreview = localAvatarPreview {
+            localPreview.resizable().scaledToFill()
+        } else if let urlString = firebaseService.uploadedAvatarURL,
+            let url = URL(string: urlString)
+        {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image): image.resizable().scaledToFill()
+                case .failure: avatarPlaceholder
+                case .empty: ProgressView()
+                @unknown default: avatarPlaceholder
+                }
+            }
+        } else if let photoURL = authManager.user?.photoURL {
+            // Fallback to Firebase Auth photoURL (Google Sign In)
+            AsyncImage(url: photoURL) { phase in
+                switch phase {
+                case .success(let image): image.resizable().scaledToFill()
+                case .failure: avatarPlaceholder
+                case .empty: ProgressView()
+                @unknown default: avatarPlaceholder
+                }
+            }
+        } else {
+            avatarPlaceholder
+        }
+    }
+
+    private var avatarPlaceholder: some View {
+        Circle()
+            .fill(Color.blue.gradient)
+            .overlay {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 48, weight: .medium))
+                    .foregroundColor(.white)
+            }
+    }
+
     // MARK: - Subscription Status Card
     private var subscriptionStatusCard: some View {
         VStack(spacing: 10) {
             if isLoadingSubscription {
-                // Loading skeleton
                 HStack(spacing: 15) {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(Color.secondary.opacity(0.2))
@@ -182,7 +237,6 @@ struct ProfileView: View {
             } else if subscriptionStatus == "active",
                 let productID = subscriptionProductID
             {
-                // ── Active subscription
                 Button {
                     showSubscription = true
                 } label: {
@@ -215,7 +269,6 @@ struct ProfileView: View {
                 .glassEffect()
 
             } else {
-                // ── No active subscription
                 Button {
                     showSubscription = true
                 } label: {
@@ -243,45 +296,7 @@ struct ProfileView: View {
                 .buttonStyle(.plain)
                 .glassEffect()
             }
-
-            // Caption
-            //            HStack(spacing: 8) {
-            //                Text("Manage your subscriptions")
-            //                    .font(.caption)
-            //                    .foregroundStyle(.secondary)
-            //                Spacer()
-            //            }
-            //            .padding(.leading, 20)
         }
-    }
-
-    // MARK: - Avatar View
-    @ViewBuilder
-    private var avatarView: some View {
-        if let avatarImage {
-            avatarImage.resizable().scaledToFill()
-        } else if let photoURL = authManager.user?.photoURL {
-            AsyncImage(url: photoURL) { phase in
-                switch phase {
-                case .success(let image): image.resizable().scaledToFill()
-                case .failure: avatarPlaceholder
-                case .empty: ProgressView()
-                @unknown default: avatarPlaceholder
-                }
-            }
-        } else {
-            avatarPlaceholder
-        }
-    }
-
-    private var avatarPlaceholder: some View {
-        Circle()
-            .fill(Color.blue.gradient)
-            .overlay {
-                Image(systemName: "person.fill")
-                    .font(.system(size: 48, weight: .medium))
-                    .foregroundColor(.white)
-            }
     }
 
     // MARK: - Policy Buttons
@@ -298,13 +313,10 @@ struct ProfileView: View {
                             .font(.system(size: 24))
                             .foregroundStyle(policy.iconColor)
                             .frame(width: 40)
-
                         Text(policy.title)
                             .font(.system(size: 17, weight: .regular))
                             .foregroundStyle(.primary)
-
                         Spacer()
-
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.tertiary)
@@ -347,13 +359,10 @@ struct ProfileView: View {
                 .foregroundStyle(isDarkMode ? .indigo : .orange)
                 .frame(width: 40)
                 .contentTransition(.symbolEffect(.replace))
-
             Text("Dark Mode")
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(.primary)
-
             Spacer()
-
             Toggle("", isOn: $isDarkMode.animation(.easeInOut(duration: 0.3)))
                 .labelsHidden()
                 .tint(.accentColor)
@@ -373,11 +382,9 @@ struct ProfileView: View {
                     .font(.system(size: 24))
                     .foregroundStyle(.red)
                     .frame(width: 40)
-
                 Text("Sign Out")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.primary)
-
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -396,11 +403,9 @@ struct ProfileView: View {
                     .font(.system(size: 24))
                     .foregroundStyle(.blue)
                     .frame(width: 40)
-
                 Text("Contact us")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.primary)
-
                 Spacer()
             }
             .padding(.horizontal, 20)
@@ -416,15 +421,12 @@ struct ProfileView: View {
             Text("VSTEP Writing")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
             Text("Version 1.0.0")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-
             Text("Powered by Vinhhaphoi from NTHT x Vinhhaphoi")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
             Text("© 2026 All rights reserved")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -470,62 +472,60 @@ struct ProfileView: View {
         do {
             try authManager.signOut()
         } catch {
-            print("❌ Logout error: \(error.localizedDescription)")
+            print("Logout error: \(error.localizedDescription)")
+        }
+    }
+    private func refreshProfile() async {
+        await withTaskGroup(of: Void.self) { group in
+            // Reload subscription status
+            group.addTask { await self.loadSubscription() }
+            // Reload avatar URL from Firestore
+            group.addTask { await self.firebaseService.fetchAvatarURL() }
+            // Reload user progress if needed
+            group.addTask {
+                try? await self.firebaseService.fetchUserProgress()
+            }
         }
     }
 
+    // MARK: - Actions
     private func handleImageSelection(_ item: PhotosPickerItem?) async {
-        guard let item = item else { return }
+        guard let item else { return }
 
         do {
-            if let data = try await item.loadTransferable(type: Data.self),
+            guard let data = try await item.loadTransferable(type: Data.self),
                 let uiImage = UIImage(data: data)
-            {
-                await MainActor.run {
-                    avatarImage = Image(uiImage: uiImage)
-                    isUploadingPhoto = true
-                }
-
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-
-                await MainActor.run {
-                    isUploadingPhoto = false
-                    alertMessage = AlertMessage(
-                        title: "Success",
-                        message: "Profile photo updated!"
-                    )
-                }
-            }
-        } catch {
-            await MainActor.run {
-                isUploadingPhoto = false
-                avatarImage = nil
+            else {
                 alertMessage = AlertMessage(
                     title: "Error",
-                    message: "Failed to load image"
+                    message: "Failed to load selected image."
                 )
+                return
             }
+
+            // Show local preview immediately without waiting for upload
+            localAvatarPreview = Image(uiImage: uiImage)
+            firebaseService.isUploadingPhoto = true
+            firebaseService.avatarUploadError = nil
+
+            let newURL = try await firebaseService.uploadAvatar(image: uiImage)
+
+            firebaseService.isUploadingPhoto = false
+            localAvatarPreview = nil
+            alertMessage = AlertMessage(
+                title: "Success",
+                message: "Profile photo updated!"
+            )
+
+            print("[ProfileView] Avatar upload success — URL: \(newURL)")
+        } catch {
+            firebaseService.isUploadingPhoto = false
+            localAvatarPreview = nil
+            alertMessage = AlertMessage(
+                title: "Error",
+                message: error.localizedDescription
+            )
         }
     }
-}
 
-// MARK: - Supporting Models
-struct PolicyInfo: Identifiable {
-    let id = UUID()
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let type: PolicyType
-}
-
-enum PolicyType: String, Identifiable {
-    case termsOfUse = "Terms of Use"
-    case privacyPolicy = "Privacy Policy"
-    var id: String { rawValue }
-}
-
-struct AlertMessage: Identifiable {
-    let id = UUID()
-    let title: String
-    let message: String
 }

@@ -188,11 +188,13 @@ extension Notification.Name {
 struct VSTEP_WritingApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authManager = AuthenticationManager.shared
+    @StateObject private var firebaseService = FirebaseService.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authManager)
+                .environmentObject(firebaseService)
                 .onOpenURL { url in
                     // Google Sign In callback - fallback for SwiftUI lifecycle
                     GIDSignIn.sharedInstance.handle(url)

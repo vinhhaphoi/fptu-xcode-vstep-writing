@@ -1,7 +1,9 @@
 import Combine
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseStorage
 import Foundation
+import UIKit
 
 // MARK: - FirebaseService
 @MainActor
@@ -9,6 +11,7 @@ class FirebaseService: ObservableObject {
 
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
+    private let storage = Storage.storage()
 
     // MARK: Published State
     @Published var tasks: [VSTEPTask] = []
@@ -17,6 +20,11 @@ class FirebaseService: ObservableObject {
     @Published var userProgress: UserProgress?
     @Published var isLoading = false
     @Published var errorMessage: String?
+
+    // MARK: - Avatar Published State
+    @Published var uploadedAvatarURL: String?
+    @Published var isUploadingPhoto = false
+    @Published var avatarUploadError: String?
 
     // MARK: Auth Helpers
     var currentUserId: String? { Auth.auth().currentUser?.uid }
@@ -150,7 +158,8 @@ class FirebaseService: ObservableObject {
             throw FirebaseServiceError.notAuthenticated
         }
 
-        let ref = try await db
+        let ref =
+            try await db
             .collection("users").document(userId)
             .collection("submissions")
             .addDocument(data: Firestore.Encoder().encode(submission))
@@ -164,7 +173,7 @@ class FirebaseService: ObservableObject {
 
     // ─────────────────────────────────────────────
     // MARK: - Listen for AI Grading Result (real-time)
-    // Tự động timeout sau 120 giây nếu AI không trả kết quả
+    // Auto timeout after 120 seconds if AI does not return result
     // ─────────────────────────────────────────────
     func listenForGradingResult(
         submissionId: String,
@@ -176,43 +185,49 @@ class FirebaseService: ObservableObject {
 
         stopListening(forQuestionId: questionId)
 
-        let docRef = db
+        let docRef =
+            db
             .collection("users").document(userId)
             .collection("submissions").document(submissionId)
 
         let listener = docRef.addSnapshotListener { snapshot, error in
             if let error = error {
-                print("[FirebaseService] Listener error: \(error.localizedDescription)")
+                print(
+                    "[FirebaseService] Listener error: \(error.localizedDescription)"
+                )
                 return
             }
             guard let snapshot, snapshot.exists else { return }
 
             do {
                 let updated = try snapshot.data(as: UserSubmission.self)
-                print("[FirebaseService] Submission \(submissionId) status: \(updated.status.rawValue)")
+                print(
+                    "[FirebaseService] Submission \(submissionId) status: \(updated.status.rawValue)"
+                )
                 onChange(updated)
 
                 if updated.status == .graded || updated.status == .failed {
                     self.stopListening(forQuestionId: questionId)
                 }
             } catch {
-                print("[FirebaseService] Decode submission failed: \(error.localizedDescription)")
+                print(
+                    "[FirebaseService] Decode submission failed: \(error.localizedDescription)"
+                )
             }
         }
 
         submissionListeners[questionId] = listener
 
-        // Timeout sau 120 giây — nếu AI vẫn chưa trả kết quả thì báo lỗi
         Task {
             try? await Task.sleep(for: .seconds(120))
 
-            // Chỉ trigger timeout nếu listener vẫn còn active (chưa graded/failed)
             guard self.submissionListeners[questionId] != nil else { return }
 
-            print("[FirebaseService] Timeout: submission \(submissionId) exceeded 120s")
+            print(
+                "[FirebaseService] Timeout: submission \(submissionId) exceeded 120s"
+            )
             self.stopListening(forQuestionId: questionId)
 
-            // Cập nhật document trên Firestore thành "failed"
             try? await docRef.updateData([
                 "status": SubmissionStatus.failed.rawValue,
                 "errorMessage": "AI grading timed out. Please try again.",
@@ -221,7 +236,6 @@ class FirebaseService: ObservableObject {
             onTimeout()
         }
     }
-
 
     // ─────────────────────────────────────────────
     // MARK: - Stop Listeners
@@ -257,7 +271,7 @@ class FirebaseService: ObservableObject {
     }
 
     // ─────────────────────────────────────────────
-    // MARK: - Update Submission Score (sau AI grading)
+    // MARK: - Update Submission Score (after AI grading)
     // ─────────────────────────────────────────────
     func updateSubmissionScore(
         submissionId: String,
@@ -334,6 +348,106 @@ class FirebaseService: ObservableObject {
     }
 
     // ─────────────────────────────────────────────
+    // MARK: - Avatar — Upload to Firebase Storage
+    // Storage path: avatars/{uid}/avatar.jpg
+    // ─────────────────────────────────────────────
+    func uploadAvatar(
+        image: UIImage,
+        maxSizeInPixels: CGFloat = 512,
+        compressionQuality: CGFloat = 0.7
+    ) async throws -> String {
+        guard let uid = currentUserId else {
+            throw AvatarUploadError.noCurrentUser
+        }
+
+        // Downscale before compress to keep file size small
+        let resized = resizeImage(image, maxDimension: maxSizeInPixels)
+
+        guard
+            let imageData = resized.jpegData(
+                compressionQuality: compressionQuality
+            )
+        else {
+            throw AvatarUploadError.imageCompressionFailed
+        }
+
+        let sizeKB = Double(imageData.count) / 1024
+        print(
+            "[FirebaseService] Avatar size after resize+compress: \(String(format: "%.1f", sizeKB)) KB"
+        )
+
+        let storageRef = storage.reference().child("avatars/\(uid)/avatar.jpg")
+
+        let metadata = StorageMetadata()
+        metadata.contentType = "image/jpeg"
+
+        do {
+            _ = try await storageRef.putDataAsync(imageData, metadata: metadata)
+        } catch {
+            throw AvatarUploadError.uploadFailed(error)
+        }
+
+        let downloadURL: URL
+        do {
+            downloadURL = try await storageRef.downloadURL()
+        } catch {
+            throw AvatarUploadError.downloadURLFailed(error)
+        }
+
+        let urlString = downloadURL.absoluteString
+
+        do {
+            try await db
+                .collection("users")
+                .document(uid)
+                .updateData(["photoURL": urlString])
+        } catch {
+            throw AvatarUploadError.firestoreUpdateFailed(error)
+        }
+
+        uploadedAvatarURL = urlString
+        return urlString
+    }
+
+    // ─────────────────────────────────────────────
+    // MARK: - Avatar — Resize image to max dimension
+    // Keeps aspect ratio, only downscales (never upscales)
+    // ─────────────────────────────────────────────
+    private func resizeImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage
+    {
+        let originalSize = image.size
+        let maxSide = max(originalSize.width, originalSize.height)
+
+        // Skip resize if already smaller than maxDimension
+        guard maxSide > maxDimension else { return image }
+
+        let scale = maxDimension / maxSide
+        let newSize = CGSize(
+            width: (originalSize.width * scale).rounded(),
+            height: (originalSize.height * scale).rounded()
+        )
+
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // MARK: - Avatar — Delete from Firebase Storage
+    // ─────────────────────────────────────────────
+    func deleteAvatar() async throws {
+        guard let uid = currentUserId else {
+            throw AvatarUploadError.noCurrentUser
+        }
+
+        let storageRef = storage.reference().child("avatars/\(uid)/avatar.jpg")
+        try await storageRef.delete()
+        uploadedAvatarURL = nil
+        print("[FirebaseService] Avatar deleted for uid: \(uid)")
+    }
+
+    // ─────────────────────────────────────────────
     // MARK: - Private Helpers
     // ─────────────────────────────────────────────
     private func progressRef(userId: String) -> DocumentReference {
@@ -370,5 +484,14 @@ class FirebaseService: ObservableObject {
         try await progressRef(userId: userId)
             .setData(["averageScore": average], merge: true)
         userProgress?.averageScore = average
+    }
+
+    func fetchAvatarURL() async {
+        guard let uid = currentUserId else { return }
+
+        let doc = try? await db.collection("users").document(uid).getDocument()
+        if let urlString = doc?.data()?["photoURL"] as? String {
+            uploadedAvatarURL = urlString
+        }
     }
 }

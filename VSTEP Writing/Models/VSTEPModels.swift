@@ -1,5 +1,4 @@
 import FirebaseFirestore
-// VSTEPModels.swift
 import Foundation
 import SwiftUI
 
@@ -188,4 +187,50 @@ struct Plan: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case displayName, price, benefits
     }
+}
+
+// MARK: - Avatar Upload Error
+enum AvatarUploadError: LocalizedError {
+    case noCurrentUser
+    case imageCompressionFailed
+    case uploadFailed(Error)
+    case downloadURLFailed(Error)
+    case firestoreUpdateFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .noCurrentUser:
+            return "No authenticated user found."
+        case .imageCompressionFailed:
+            return "Failed to compress image data."
+        case .uploadFailed(let error):
+            return "Upload failed: \(error.localizedDescription)"
+        case .downloadURLFailed(let error):
+            return "Failed to get download URL: \(error.localizedDescription)"
+        case .firestoreUpdateFailed(let error):
+            return "Failed to update profile: \(error.localizedDescription)"
+        }
+    }
+}
+
+
+// MARK: - Supporting Models
+struct PolicyInfo: Identifiable {
+    let id = UUID()
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let type: PolicyType
+}
+
+enum PolicyType: String, Identifiable {
+    case termsOfUse = "Terms of Use"
+    case privacyPolicy = "Privacy Policy"
+    var id: String { rawValue }
+}
+
+struct AlertMessage: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }

@@ -9,6 +9,9 @@ struct ContentView: View {
 }
 
 struct TabBarView: View {
+    @EnvironmentObject var authManager: AuthenticationManager
+    @EnvironmentObject var firebaseService: FirebaseService
+
     @State private var unreadCount = 0
 
     var body: some View {
@@ -42,15 +45,13 @@ struct TabBarView: View {
             }
 
             Tab(role: .search) {
-                
+                // Chat view placeholder
             } label: {
                 Label("Chat", systemImage: "ellipsis.message")
                     .environment(\.symbolVariants, .none)
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        // Updated: apply brand primary color (#16433F) to selected tab icon
-        .tint(BrandColor.light)  
-        
+        .tint(BrandColor.light)
     }
 }
