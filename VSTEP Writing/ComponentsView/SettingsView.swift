@@ -6,6 +6,7 @@ import UserNotifications
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @AppStorage("isDarkMode") private var isDarkMode = false
+    @EnvironmentObject var authManager: AuthenticationManager
 
     // Navigation States
     @State private var navigateToSecurity = false
@@ -28,6 +29,12 @@ struct SettingsView: View {
 
             notificationToggle
                 .padding()
+
+            // Face ID toggle - only show if device supports biometrics
+            if BiometricAuthService.shared.isAvailable {
+                faceIDToggle
+                    .padding()
+            }
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Settings")
@@ -47,7 +54,9 @@ struct SettingsView: View {
         }
         // Re-sync when app comes back to foreground (user may have changed in Settings.app)
         .onReceive(
-            NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+            NotificationCenter.default.publisher(
+                for: UIApplication.willEnterForegroundNotification
+            )
         ) { _ in
             Task { await syncNotificationStatus() }
         }
@@ -57,11 +66,14 @@ struct SettingsView: View {
     private var notificationToggle: some View {
         VStack(spacing: 10) {
             HStack(spacing: 15) {
-                Image(systemName: isNotificationOn ? "bell.fill" : "bell.slash.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(isNotificationOn ? .orange : .secondary)
-                    .frame(width: 40)
-                    .contentTransition(.symbolEffect(.replace))
+                Image(
+                    systemName: isNotificationOn
+                        ? "bell.fill" : "bell.slash.fill"
+                )
+                .font(.system(size: 26))
+                .foregroundStyle(isNotificationOn ? .orange : .secondary)
+                .frame(width: 40)
+                .contentTransition(.symbolEffect(.replace))
 
                 Text("Notifications")
                     .font(.system(size: 17, weight: .regular))
@@ -69,12 +81,15 @@ struct SettingsView: View {
 
                 Spacer()
 
-                Toggle("", isOn: Binding(
-                    get: { isNotificationOn },
-                    set: { newValue in
-                        Task { await handleNotificationToggle(newValue) }
-                    }
-                ))
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { isNotificationOn },
+                        set: { newValue in
+                            Task { await handleNotificationToggle(newValue) }
+                        }
+                    )
+                )
                 .labelsHidden()
                 .tint(.accentColor)
             }
@@ -98,6 +113,81 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Face ID Toggle
+    private var faceIDToggle: some View {
+        let biometricName =
+            BiometricAuthService.shared.biometricType == .faceID
+            ? "Face ID" : "Touch ID"
+        let icon =
+            BiometricAuthService.shared.biometricType == .faceID
+            ? "faceid" : "touchid"
+
+        return VStack(spacing: 10) {
+            HStack(spacing: 15) {
+                Image(systemName: icon)
+                    .font(.system(size: 26))
+                    .foregroundStyle(
+                        authManager.isBiometricLoginEnabled ? .blue : .secondary
+                    )
+                    .frame(width: 40)
+                    .contentTransition(.symbolEffect(.replace))
+
+                Text("Sign in with \(biometricName)")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { authManager.isBiometricLoginEnabled },
+                        set: { newValue in
+                            if !newValue {
+                                // Turn off synchronously - no async needed
+                                authManager.isBiometricLoginEnabled = false
+                            } else {
+                                // Turn on requires biometric verification - must be async
+                                Task { await handleFaceIDToggle(true) }
+                            }
+                        }
+                    )
+                )
+                .labelsHidden()
+                .tint(.accentColor)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .glassEffect()
+
+            HStack(spacing: 8) {
+                Text(
+                    authManager.isBiometricLoginEnabled
+                        ? "You will be asked to authenticate with \(biometricName) on next launch"
+                        : "Enable to sign in faster without entering your password"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.leading, 20)
+            .animation(.easeInOut, value: authManager.isBiometricLoginEnabled)
+        }
+    }
+
+    private func handleFaceIDToggle(_ newValue: Bool) async {
+        guard newValue else { return }
+
+        do {
+            try await BiometricAuthService.shared.authenticate()
+            authManager.isBiometricLoginEnabled = true
+        } catch BiometricError.cancelled {
+            // Toggle already false, nothing to revert
+        } catch {
+            authManager.isBiometricLoginEnabled = false
+        }
+    }
+
     // MARK: - Edit Profile Button
     private var EditProfileButton: some View {
         VStack(spacing: 10) {
@@ -115,7 +205,6 @@ struct SettingsView: View {
                         .foregroundStyle(.primary)
 
                     Spacer()
-
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -216,7 +305,8 @@ struct SettingsView: View {
 
     // Read current system notification permission and sync toggle state
     private func syncNotificationStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let settings = await UNUserNotificationCenter.current()
+            .notificationSettings()
         await MainActor.run {
             isNotificationOn = settings.authorizationStatus == .authorized
         }
@@ -225,14 +315,17 @@ struct SettingsView: View {
     private func handleNotificationToggle(_ newValue: Bool) async {
         if newValue {
             // User wants to enable - check current permission status
-            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            let settings = await UNUserNotificationCenter.current()
+                .notificationSettings()
 
             switch settings.authorizationStatus {
             case .notDetermined:
                 // First time - request permission
-                let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(
-                    options: [.alert, .badge, .sound]
-                )) ?? false
+                let granted =
+                    (try? await UNUserNotificationCenter.current()
+                        .requestAuthorization(
+                            options: [.alert, .badge, .sound]
+                        )) ?? false
                 await MainActor.run {
                     isNotificationOn = granted
                     if granted {
@@ -268,7 +361,9 @@ struct SettingsView: View {
 
     // Open iOS Settings.app for this app
     private func openAppSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
         UIApplication.shared.open(url)
     }
 }
