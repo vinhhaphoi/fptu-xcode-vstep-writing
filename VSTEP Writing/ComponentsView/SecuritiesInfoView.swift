@@ -468,12 +468,17 @@ struct DeleteAccountRequestView: View {
                         .padding(.horizontal)
                     }
 
-                    // Reason input (optional)
+                    // Reason input (required)
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Reason (optional)")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 24)
+                        HStack {
+                            Text("Reason")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("*")
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                        }
+                        .padding(.horizontal, 24)
 
                         TextField(
                             "Tell us why you want to leave...",
@@ -483,8 +488,34 @@ struct DeleteAccountRequestView: View {
                         .lineLimit(3...5)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 16)
-                        .glassEffect(in: .rect(cornerRadius: 16))
+                        .glassEffect(
+                            in: .rect(cornerRadius: 16)
+                        )
                         .padding(.horizontal)
+
+                        // Validation hint
+                        HStack(spacing: 6) {
+                            Image(
+                                systemName: isReasonValid
+                                    ? "checkmark.circle.fill" : "info.circle"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(
+                                isReasonValid ? .green : .secondary
+                            )
+
+                            Text(
+                                isReasonValid
+                                    ? "Thank you for your feedback"
+                                    : "Please provide at least 10 characters"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(
+                                isReasonValid ? .green : .secondary
+                            )
+                        }
+                        .padding(.horizontal, 24)
+                        .animation(.easeInOut, value: isReasonValid)
                     }
 
                     // Terms checkbox
@@ -542,10 +573,12 @@ struct DeleteAccountRequestView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                     }
-                    .disabled(!hasReadTerms || isLoading)
+                    .disabled(!hasReadTerms || !isReasonValid || isLoading)
                     .buttonStyle(.plain)
                     .glassEffect(
-                        .regular.tint(hasReadTerms ? .orange : .gray)
+                        .regular.tint(
+                            hasReadTerms && isReasonValid ? .orange : .gray
+                        )
                     )
                     .padding(.horizontal)
                     .padding(.bottom)
@@ -572,6 +605,10 @@ struct DeleteAccountRequestView: View {
         }
     }
 
+    private var isReasonValid: Bool {
+        reason.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+    }
+
     // MARK: - Deletion Item Row
     private func deletionItem(icon: String, color: Color, text: String)
         -> some View
@@ -592,19 +629,21 @@ struct DeleteAccountRequestView: View {
         .padding(.vertical, 14)
     }
 
-    // MARK: - Submit Request to Firestore
     private func handleRequestDeletion() async {
         isLoading = true
         errorMessage = ""
         defer { isLoading = false }
 
-        guard let uid = Auth.auth().currentUser?.uid else {
+        guard let user = Auth.auth().currentUser,
+            let uid = Auth.auth().currentUser?.uid,
+            let userEmail = user.email
+        else {
             errorMessage = "You are not signed in."
             return
         }
 
         do {
-            // Step 1: Check if a request already exists
+            // Step 1: Check existing request
             let existingDoc =
                 try await db
                 .collection("deleteRequests")
@@ -614,7 +653,6 @@ struct DeleteAccountRequestView: View {
             if existingDoc.exists {
                 let currentStatus =
                     existingDoc.data()?["status"] as? String ?? ""
-
                 if currentStatus == "pending" {
                     errorMessage =
                         "You already have a pending deletion request. Please wait for admin review."
@@ -624,35 +662,73 @@ struct DeleteAccountRequestView: View {
                         "Your deletion request has already been approved."
                     return
                 }
-                // Allow re-submit only if status is "rejected"
             }
 
+            let trimmedReason = reason.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+            // Step 2: Write delete request to Firestore
             let requestData: [String: Any] = [
                 "requestedAt": Timestamp(date: Date()),
                 "status": "pending",
-                "reason": reason.trimmingCharacters(
-                    in: .whitespacesAndNewlines
-                ),
+                "reason": trimmedReason,
             ]
-
-            // Step 2: Write or overwrite delete request
             try await db
                 .collection("deleteRequests")
                 .document(uid)
                 .setData(requestData)
 
-            // Step 3: Mark user as disabled in Firestore
+            // Step 3: Disable user in Firestore
             try await db
                 .collection("users")
                 .document(uid)
                 .updateData(["isDisabled": true])
 
-            // Step 4: Sign out immediately
+            // Step 4: Send email to admin via Trigger Email extension
+            try await sendDeletionRequestEmail(
+                userEmail: userEmail,
+                userUID: uid,
+                reason: trimmedReason
+            )
+
+            // Step 5: Sign out
             try Auth.auth().signOut()
 
             showSuccess = true
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // MARK: - Send admin notification email via Firestore Trigger Email extension
+    private func sendDeletionRequestEmail(
+        userEmail: String,
+        userUID: String,
+        reason: String
+    ) async throws {
+        let adminEmail = "vinhhaphoi@gmail.com"
+        let reasonText = reason.isEmpty ? "No reason provided" : reason
+
+        let emailData: [String: Any] = [
+            "to": [adminEmail],
+            "message": [
+                "subject": "[VSTEP Writing] Account Deletion Request",
+                "html": """
+                <h2>Account Deletion Request</h2>
+                <p>A user has submitted a request to delete their account.</p>
+                <table>
+                    <tr><td><b>Email:</b></td><td>\(userEmail)</td></tr>
+                    <tr><td><b>User UID:</b></td><td>\(userUID)</td></tr>
+                    <tr><td><b>Reason:</b></td><td>\(reasonText)</td></tr>
+                    <tr><td><b>Submitted at:</b></td><td>\(Date().formatted())</td></tr>
+                </table>
+                <p>Please review this request in the Firebase Console.</p>
+                """,
+            ],
+        ]
+
+        // Write to 'mail' collection — Trigger Email extension picks it up automatically
+        try await db.collection("mail").addDocument(data: emailData)
     }
 }
