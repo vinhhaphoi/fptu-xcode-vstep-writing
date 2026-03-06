@@ -1,6 +1,7 @@
 import Combine
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseFunctions  // Add this import
 import FirebaseStorage
 import Foundation
 import UIKit
@@ -12,6 +13,9 @@ class FirebaseService: ObservableObject {
     static let shared = FirebaseService()
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
+
+    // Functions client pointing to asia-southeast1 to match Cloud Function deployment region
+    private lazy var functions = Functions.functions(region: "asia-southeast1")
 
     // MARK: Published State
     @Published var tasks: [VSTEPTask] = []
@@ -360,7 +364,6 @@ class FirebaseService: ObservableObject {
             throw AvatarUploadError.noCurrentUser
         }
 
-        // Downscale before compress to keep file size small
         let resized = resizeImage(image, maxDimension: maxSizeInPixels)
 
         guard
@@ -418,7 +421,6 @@ class FirebaseService: ObservableObject {
         let originalSize = image.size
         let maxSide = max(originalSize.width, originalSize.height)
 
-        // Skip resize if already smaller than maxDimension
         guard maxSide > maxDimension else { return image }
 
         let scale = maxDimension / maxSide
@@ -445,6 +447,66 @@ class FirebaseService: ObservableObject {
         try await storageRef.delete()
         uploadedAvatarURL = nil
         print("[FirebaseService] Avatar deleted for uid: \(uid)")
+    }
+
+    // ─────────────────────────────────────────────
+    // MARK: - Fetch Avatar URL from Firestore
+    // ─────────────────────────────────────────────
+    func fetchAvatarURL() async {
+        guard let uid = currentUserId else { return }
+
+        let doc = try? await db.collection("users").document(uid).getDocument()
+        if let urlString = doc?.data()?["photoURL"] as? String {
+            uploadedAvatarURL = urlString
+        }
+    }
+
+    // MARK: - AI Chat
+    // Calls the askAI Cloud Function with Genkit-compatible message history
+
+    // Sends the full conversation history to askAI without question context
+    func askAI(messages: [ChatMessage]) async throws -> String {
+        guard isAuthenticated else {
+            throw AIChatError.unauthenticated
+        }
+
+        let formattedMessages = messages.map { $0.toGenkitDict() }
+
+        let payload: [String: Any] = [
+            "messages": formattedMessages
+        ]
+
+        do {
+            let result = try await functions.httpsCallable("askAI").call(
+                payload
+            )
+
+            guard
+                let data = result.data as? [String: Any],
+                let reply = data["response"] as? String
+            else {
+                throw AIChatError.invalidResponseFormat
+            }
+
+            print("[FirebaseService] askAI reply received")
+            return reply
+
+        } catch let error as NSError {
+            if let chatError = error as? AIChatError { throw chatError }
+
+            guard error.domain == FunctionsErrorDomain else {
+                throw AIChatError.unknown(error.localizedDescription)
+            }
+
+            switch FunctionsErrorCode(rawValue: error.code) {
+            case .unauthenticated:
+                throw AIChatError.unauthenticated
+            case .internal, .unavailable, .deadlineExceeded:
+                throw AIChatError.serverBusy
+            default:
+                throw AIChatError.unknown(error.localizedDescription)
+            }
+        }
     }
 
     // ─────────────────────────────────────────────
@@ -486,12 +548,109 @@ class FirebaseService: ObservableObject {
         userProgress?.averageScore = average
     }
 
-    func fetchAvatarURL() async {
-        guard let uid = currentUserId else { return }
+    // ─────────────────────────────────────────────
+    // MARK: - Chat History
+    // Firestore path: users/{uid}/chatSessions/{sessionId}
+    // ─────────────────────────────────────────────
 
-        let doc = try? await db.collection("users").document(uid).getDocument()
-        if let urlString = doc?.data()?["photoURL"] as? String {
-            uploadedAvatarURL = urlString
+    // Creates a new empty chat session and returns its document ID
+    func createChatSession() async throws -> String {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        let session = ChatSession(
+            createdAt: Date(),
+            updatedAt: Date(),
+            messages: []
+        )
+
+        let ref =
+            try await db
+            .collection("users").document(userId)
+            .collection("chatSessions")
+            .addDocument(data: Firestore.Encoder().encode(session))
+
+        print("[FirebaseService] Created chat session: \(ref.documentID)")
+        return ref.documentID
+    }
+
+    // Appends a single message to an existing session and updates timestamp
+    func appendMessage(_ message: ChatMessage, toSession sessionId: String)
+        async throws
+    {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        let record = ChatMessageRecord(from: message)
+        let encoded = try Firestore.Encoder().encode(record)
+
+        try await db
+            .collection("users").document(userId)
+            .collection("chatSessions").document(sessionId)
+            .updateData([
+                "messages": FieldValue.arrayUnion([encoded]),
+                "updatedAt": FieldValue.serverTimestamp(),
+            ])
+    }
+
+    // Loads the most recent chat session ordered by updatedAt
+    func loadLatestChatSession() async throws -> (
+        sessionId: String, messages: [ChatMessage]
+    )? {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        let snapshot =
+            try await db
+            .collection("users").document(userId)
+            .collection("chatSessions")
+            .order(by: "updatedAt", descending: true)
+            .limit(to: 1)
+            .getDocuments()
+
+        guard let doc = snapshot.documents.first else { return nil }
+
+        let session = try doc.data(as: ChatSession.self)
+        let messages = session.messages.map { $0.toChatMessage() }
+
+        print(
+            "[FirebaseService] Loaded session \(doc.documentID) with \(messages.count) messages"
+        )
+        return (sessionId: doc.documentID, messages: messages)
+    }
+
+    // Deletes a specific chat session and all its data
+    func deleteChatSession(sessionId: String) async throws {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        try await db
+            .collection("users").document(userId)
+            .collection("chatSessions").document(sessionId)
+            .delete()
+
+        print("[FirebaseService] Deleted chat session: \(sessionId)")
+    }
+
+    // Fetches all chat sessions ordered by most recent activity
+    func fetchAllChatSessions() async throws -> [ChatSession] {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        let snapshot =
+            try await db
+            .collection("users").document(userId)
+            .collection("chatSessions")
+            .order(by: "updatedAt", descending: true)
+            .getDocuments()
+
+        return try snapshot.documents.compactMap {
+            try $0.data(as: ChatSession.self)
         }
     }
 }

@@ -118,18 +118,18 @@ struct UserSubmission: Identifiable, Codable, Equatable {
     var essayText: String? = nil
 
     enum CodingKeys: String, CodingKey {
-           case questionId
-           case content
-           case wordCount
-           case submittedAt
-           case score
-           case feedback
-           case overallComment 
-           case suggestions
-           case criteria
-           case status
-           case essayText
-       }
+        case questionId
+        case content
+        case wordCount
+        case submittedAt
+        case score
+        case feedback
+        case overallComment
+        case suggestions
+        case criteria
+        case status
+        case essayText
+    }
 }
 struct SubmissionCriterion: Codable, Hashable {
     let name: String
@@ -213,7 +213,6 @@ enum AvatarUploadError: LocalizedError {
     }
 }
 
-
 // MARK: - Supporting Models
 struct PolicyInfo: Identifiable {
     let id = UUID()
@@ -244,8 +243,11 @@ enum BiometricError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAvailable: return "Biometric authentication is not available on this device."
-        case .notEnrolled: return "No biometric data enrolled. Please set up Face ID in Settings."
+        case .notAvailable:
+            return "Biometric authentication is not available on this device."
+        case .notEnrolled:
+            return
+                "No biometric data enrolled. Please set up Face ID in Settings."
         case .failed(let error): return error.localizedDescription
         case .cancelled: return "Authentication was cancelled."
         }
@@ -257,4 +259,98 @@ enum BiometricType {
     case faceID
     case touchID
     case none
+}
+
+enum MessageRole: String {
+    case user = "user"
+    case model = "model"
+}
+
+// Represents a single message in the VSTEP writing chat session
+struct ChatMessage: Identifiable, Equatable {
+    let id: UUID
+    let role: MessageRole
+    let content: String
+    let timestamp: Date
+
+    init(
+        id: UUID = UUID(),
+        role: MessageRole,
+        content: String,
+        timestamp: Date = Date()
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+    }
+
+    // Maps a ChatMessage to Genkit-compatible dictionary format for Firebase Functions
+    func toGenkitDict() -> [String: Any] {
+        return [
+            "role": role.rawValue,
+            "content": [
+                ["text": content]
+            ],
+        ]
+    }
+}
+
+// Represents recoverable error states from the askAI Cloud Function
+enum AIChatError: LocalizedError {
+    case invalidResponseFormat
+    case unauthenticated
+    case serverBusy
+    case unknown(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponseFormat:
+            return "Could not parse AI response. Please try again."
+        case .unauthenticated:
+            return "Your session has expired. Please sign in again."
+        case .serverBusy:
+            return "AI assistant is busy. Please try again in a moment."
+        case .unknown(let message):
+            return message
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - Chat Session Models
+// ─────────────────────────────────────────────
+
+// Codable representation of ChatMessage for Firestore storage
+struct ChatMessageRecord: Codable {
+    let id: String
+    let role: String
+    let content: String
+    let timestamp: Date
+
+    // Converts from ChatMessage to a Firestore-compatible record
+    init(from message: ChatMessage) {
+        self.id = message.id.uuidString
+        self.role = message.role.rawValue
+        self.content = message.content
+        self.timestamp = message.timestamp
+    }
+
+    // Converts back from Firestore record to ChatMessage for UI use
+    func toChatMessage() -> ChatMessage {
+        ChatMessage(
+            id: UUID(uuidString: id) ?? UUID(),
+            role: MessageRole(rawValue: role) ?? .model,
+            content: content,
+            timestamp: timestamp
+        )
+    }
+}
+
+// Represents a full chat session stored in Firestore
+struct ChatSession: Codable, Identifiable {
+    @DocumentID var id: String?
+    var createdAt: Date
+    var updatedAt: Date
+    var messages: [ChatMessageRecord]
 }
