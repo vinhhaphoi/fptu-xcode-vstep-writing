@@ -1,11 +1,8 @@
 import Combine
 import FirebaseAuth
-// Firebase
 import FirebaseCore
 import FirebaseFirestore
-// System frameworks
 import Foundation
-// Third-party
 import GoogleSignIn
 import SwiftUI
 
@@ -29,8 +26,7 @@ class AuthenticationManager: ObservableObject {
     }
 
     private func setupAuthStateListener() {
-        authStateListener = Auth.auth().addStateDidChangeListener {
-            [weak self] _, user in
+        authStateListener = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.user = user
             self?.authState = user != nil ? .authenticated : .unauthenticated
         }
@@ -43,17 +39,12 @@ class AuthenticationManager: ObservableObject {
         displayName: String,
         targetLevel: String
     ) async throws {
-        let result = try await Auth.auth().createUser(
-            withEmail: email,
-            password: password
-        )
+        let result = try await Auth.auth().createUser(withEmail: email, password: password)
 
-        // Set displayName on Firebase Auth profile
         let changeRequest = result.user.createProfileChangeRequest()
         changeRequest.displayName = displayName
         try await changeRequest.commitChanges()
 
-        // Save targetLevel to Firestore
         try await saveUserProfile(
             userId: result.user.uid,
             displayName: displayName,
@@ -75,64 +66,64 @@ class AuthenticationManager: ObservableObject {
     }
 
     func signIn(email: String, password: String) async throws {
-        let result = try await Auth.auth().signIn(
-            withEmail: email,
-            password: password
-        )
+        let result = try await Auth.auth().signIn(withEmail: email, password: password)
         self.user = result.user
     }
 
     // MARK: - Google Sign-In
     func signInWithGoogle() async throws {
-        // 1. Get Firebase client ID
         guard let clientID = FirebaseApp.app()?.options.clientID else {
             throw AuthError.noClientID
         }
 
-        // 2. Configure Google Sign-In
         let config = GIDConfiguration(clientID: clientID)
         GIDSignIn.sharedInstance.configuration = config
 
-        // 3. Get presenting view controller
         guard
-            let windowScene = UIApplication.shared.connectedScenes.first
-                as? UIWindowScene,
-            let rootViewController = windowScene.windows.first?
-                .rootViewController
+            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+            let rootViewController = windowScene.windows.first?.rootViewController
         else {
             throw AuthError.noRootViewController
         }
 
-        // 4. Start Google Sign-In flow
-        let result = try await GIDSignIn.sharedInstance.signIn(
-            withPresenting: rootViewController
-        )
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController)
         let user = result.user
 
         guard let idToken = user.idToken?.tokenString else {
             throw AuthError.noIDToken
         }
 
-        // 5. Create Firebase credential
         let credential = GoogleAuthProvider.credential(
             withIDToken: idToken,
             accessToken: user.accessToken.tokenString
         )
 
-        // 6. Sign in to Firebase
         let authResult = try await Auth.auth().signIn(with: credential)
         self.user = authResult.user
     }
 
     // MARK: - Sign Out
     func signOut() throws {
-        // Sign out from Firebase
         try Auth.auth().signOut()
-
-        // Sign out from Google
         GIDSignIn.sharedInstance.signOut()
-
         self.user = nil
+
+        // Reset biometric unlock state on sign out
+        isBiometricLoginEnabled = false
+    }
+
+    // MARK: - Delete Account
+    func deleteAccount() async throws {
+        guard let user = Auth.auth().currentUser else {
+            throw NSError(
+                domain: "Auth",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "No user logged in"]
+            )
+        }
+        let db = Firestore.firestore()
+        try await db.collection("users").document(user.uid).delete()
+        try await user.delete()
     }
 
     // MARK: - Custom Errors
@@ -152,24 +143,28 @@ class AuthenticationManager: ObservableObject {
         }
     }
 
-    func deleteAccount() async throws {
-        guard let user = Auth.auth().currentUser else {
-            throw NSError(
-                domain: "Auth",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "No user logged in"]
-            )
-        }
-        // Delete Firestore user data before deleting auth account
-        let db = Firestore.firestore()
-        try await db.collection("users").document(user.uid).delete()
-        // Delete Firebase Auth account
-        try await user.delete()
-    }
-
     deinit {
         if let listener = authStateListener {
             Auth.auth().removeStateDidChangeListener(listener)
         }
+    }
+}
+
+// MARK: - Biometric Login Preference
+extension AuthenticationManager {
+
+    private static let biometricEnabledKey = "isBiometricLoginEnabled"
+
+    // Persist Face ID preference in UserDefaults
+    var isBiometricLoginEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.biometricEnabledKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.biometricEnabledKey) }
+    }
+
+    // Returns true if device supports biometric AND user has not enabled it yet
+    // Call this after first login success to decide whether to show the prompt
+    func shouldPromptEnableBiometric() -> Bool {
+        guard BiometricAuthService.shared.isAvailable else { return false }
+        return !isBiometricLoginEnabled
     }
 }

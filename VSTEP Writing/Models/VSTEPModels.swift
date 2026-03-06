@@ -234,3 +234,27 @@ struct AlertMessage: Identifiable {
     let title: String
     let message: String
 }
+
+// MARK: - Biometric Auth Error
+enum BiometricError: LocalizedError {
+    case notAvailable
+    case notEnrolled
+    case failed(Error)
+    case cancelled
+
+    var errorDescription: String? {
+        switch self {
+        case .notAvailable: return "Biometric authentication is not available on this device."
+        case .notEnrolled: return "No biometric data enrolled. Please set up Face ID in Settings."
+        case .failed(let error): return error.localizedDescription
+        case .cancelled: return "Authentication was cancelled."
+        }
+    }
+}
+
+// MARK: - Biometric Type
+enum BiometricType {
+    case faceID
+    case touchID
+    case none
+}

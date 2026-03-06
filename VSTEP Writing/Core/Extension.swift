@@ -1,4 +1,3 @@
-// Extensions.swift
 import Foundation
 import SwiftUI
 

@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - LoginView
 struct SignInView: View {
     @EnvironmentObject var authManager: AuthenticationManager
+    var onLoginSuccess: (() -> Void)? = nil
 
     // MARK: - States
     @State private var email = ""
@@ -198,26 +199,49 @@ struct SignInView: View {
 
     // MARK: - Sign In Button
     private var signInButton: some View {
-        Button {
-            Task { await handleSignIn() }
-        } label: {
-            ZStack {
-                if isLoading {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Text("Sign In")
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
+        HStack(spacing: 12) {
+            Button {
+                Task { await handleSignIn() }
+            } label: {
+                ZStack {
+                    if isLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text("Sign In")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .glassEffect(.regular.tint(.blue).interactive(), in: .capsule)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .glassEffect(.regular.tint(.blue).interactive(), in: .capsule)
+            .buttonStyle(.plain)
+            .disabled(isButtonDisabled)
+            .opacity(isButtonDisabled ? 0.6 : 1)
+            .animation(.easeInOut(duration: 0.2), value: isButtonDisabled)
+
+            // Face ID only when Firebase session still alive (not after explicit sign out)
+            if BiometricAuthService.shared.isAvailable
+                && Auth.auth().currentUser != nil
+            {
+                Button {
+                    Task { await handleBiometricSignIn() }
+                } label: {
+                    Image(
+                        systemName: BiometricAuthService.shared.biometricType
+                            == .faceID
+                            ? "faceid" : "touchid"
+                    )
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .frame(width: 52, height: 52)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .buttonStyle(.plain)
+                .disabled(isButtonDisabled)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(isButtonDisabled)
-        .opacity(isButtonDisabled ? 0.6 : 1)
         .animation(.easeInOut(duration: 0.2), value: isButtonDisabled)
     }
 
@@ -261,6 +285,35 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(isButtonDisabled)
+        }
+    }
+
+    private func handleBiometricSignIn() async {
+        do {
+            try await BiometricAuthService.shared.authenticate()
+
+            await MainActor.run {
+                // Biometric passed - check if Firebase session still valid
+                if Auth.auth().currentUser != nil {
+                    // Session still alive, just unlock
+                    if !authManager.isBiometricLoginEnabled {
+                        authManager.isBiometricLoginEnabled = true
+                    }
+                    onLoginSuccess?()
+                } else {
+                    // Firebase session expired - fill email, user must sign in manually
+                    // Biometric only pre-fills, cannot re-auth without credentials
+                    withAnimation {
+                        errorMessage = "Session expired. Please sign in again."
+                    }
+                }
+            }
+        } catch BiometricError.cancelled {
+            // Do nothing
+        } catch {
+            await MainActor.run {
+                withAnimation { errorMessage = error.localizedDescription }
+            }
         }
     }
 
@@ -310,11 +363,11 @@ struct SignInView: View {
         .sheet(isPresented: $isShowingContact) {
             NavigationStack {
                 ContactInfoView()
-//                    .toolbar {
-//                        ToolbarItem(placement: .topBarTrailing) {
-//                            Button("Done") { isShowingContact = false }
-//                        }
-//                    }
+                //                    .toolbar {
+                //                        ToolbarItem(placement: .topBarTrailing) {
+                //                            Button("Done") { isShowingContact = false }
+                //                        }
+                //                    }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -333,6 +386,8 @@ struct SignInView: View {
         }
         do {
             try await authManager.signIn(email: email, password: password)
+            // Notify RootView login succeeded
+            await MainActor.run { onLoginSuccess?() }
         } catch {
             await MainActor.run {
                 withAnimation {
@@ -350,6 +405,8 @@ struct SignInView: View {
         }
         do {
             try await authManager.signInWithGoogle()
+            // Notify RootView login succeeded
+            await MainActor.run { onLoginSuccess?() }
         } catch {
             await MainActor.run {
                 withAnimation {
