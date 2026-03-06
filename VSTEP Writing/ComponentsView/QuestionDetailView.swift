@@ -15,6 +15,8 @@ struct QuestionDetailView: View {
     @State private var essayText = ""
     @State private var showSubmitConfirm = false
     @State private var isSubmitting = false
+    // NEW: controls whether user is in re-submit writing mode
+    @State private var isResubmitting = false
 
     private var taskColor: Color { question.isTask1 ? .blue : .purple }
     private var hasHistory: Bool { !submissionHistory.isEmpty }
@@ -23,10 +25,15 @@ struct QuestionDetailView: View {
     }
     private var minWords: Int { 10 }
 
+    // Whether to show the writing form (first submit OR re-submit mode)
+    private var shouldShowWritingForm: Bool {
+        latestSubmission == nil || isResubmitting
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let submission = latestSubmission {
+                if let submission = latestSubmission, !isResubmitting {
                     SubmissionReviewView(
                         question: question,
                         submission: submission,
@@ -56,12 +63,36 @@ struct QuestionDetailView: View {
                 }
             }
 
-            if hasHistory {
+            // Cancel button: shown only when re-submitting
+            if isResubmitting {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showHistorySheet = true
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
+                    Button("Cancel") {
+                        isResubmitting = false
+                        essayText = ""
+                    }
+                    .tint(.red)
+                }
+            } else {
+                // Re-submit button: shown when there is already a graded submission
+                if latestSubmission != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            essayText = ""
+                            isResubmitting = true
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                        }
+                    }
+                }
+
+                // History button: shown when there is submission history
+                if hasHistory {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            showHistorySheet = true
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
                     }
                 }
             }
@@ -70,7 +101,8 @@ struct QuestionDetailView: View {
             GradingHistorySheet(history: submissionHistory)
         }
         .confirmationDialog(
-            "Submit for AI Grading?",
+            isResubmitting
+                ? "Re-submit for AI Grading?" : "Submit for AI Grading?",
             isPresented: $showSubmitConfirm,
             titleVisibility: .visible
         ) {
@@ -80,9 +112,20 @@ struct QuestionDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "Your essay will be automatically graded by Gemini AI. Results typically appear within 10–30 seconds. Once submitted, you cannot edit this attempt."
-            )
+            if isResubmitting {
+                Text(
+                    "This will create a new submission attempt. Your previous result will be saved in history. Results typically appear within 10–30 seconds."
+                )
+            } else {
+                Text(
+                    "Your essay will be automatically graded by Gemini AI. Results typically appear within 10–30 seconds. Once submitted, you cannot edit this attempt."
+                )
+            }
+        }
+        // Reset states when parent delivers a new submission after re-submit
+        .onChange(of: latestSubmission) { _, _ in
+            isSubmitting = false
+            isResubmitting = false
         }
     }
 
@@ -216,6 +259,32 @@ struct QuestionDetailView: View {
     private var writingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
 
+            // Re-submit info banner: shown only when re-submitting
+            if isResubmitting {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                        .foregroundStyle(.purple)
+                        .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("New Attempt")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.purple)
+                        Text(
+                            "You are writing a new attempt. Your previous result is saved in history."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassEffect(
+                    .regular.tint(Color.purple.opacity(0.1)),
+                    in: .rect(cornerRadius: 12)
+                )
+            }
+
             // Beta disclaimer banner
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -312,9 +381,16 @@ struct QuestionDetailView: View {
                         .padding(.vertical, 14)
                     } else {
                         HStack(spacing: 8) {
-                            Image(systemName: "sparkles")
-                            Text("Submit for AI Grading")
-                                .font(.subheadline.weight(.semibold))
+                            Image(
+                                systemName: isResubmitting
+                                    ? "arrow.counterclockwise" : "sparkles"
+                            )
+                            Text(
+                                isResubmitting
+                                    ? "Re-submit for AI Grading"
+                                    : "Submit for AI Grading"
+                            )
+                            .font(.subheadline.weight(.semibold))
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -457,7 +533,6 @@ private struct SubmissionReviewView: View {
                         isExpanded: $suggestionsExpanded,
                         count: suggestions.count
                     ) {
-                        // FIX: boc moi suggestion trong glass card giong CriterionRow de dong deu
                         VStack(spacing: 8) {
                             ForEach(
                                 Array(suggestions.enumerated()),
@@ -665,7 +740,6 @@ private struct CriterionRow: View {
                         .glassEffect(in: .capsule)
                 }
                 if let score = criterion.score {
-                    // FIX: doi /5 thanh /10 vi AI tra ve thang 0-10
                     Text(String(format: "%.1f/10", score))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(criterionScoreColor(score))
@@ -682,7 +756,6 @@ private struct CriterionRow: View {
         .glassEffect(in: .rect(cornerRadius: 8))
     }
 
-    // FIX: nguong mau theo thang /10 thay vi /5
     private func criterionScoreColor(_ score: Double) -> Color {
         switch score {
         case 8...: return .green
@@ -702,7 +775,6 @@ struct GradingHistorySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    // AI info banner
                     HStack(spacing: 10) {
                         Image(systemName: "sparkles")
                             .foregroundStyle(.blue)
@@ -858,7 +930,6 @@ private struct HistoryAttemptCard: View {
                     isExpanded: $suggestionsExpanded,
                     count: suggestions.count
                 ) {
-                    // FIX: boc moi suggestion trong glass card giong CriterionRow de dong deu
                     VStack(spacing: 8) {
                         ForEach(
                             Array(suggestions.enumerated()),

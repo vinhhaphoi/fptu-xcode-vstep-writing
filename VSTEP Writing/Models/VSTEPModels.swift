@@ -103,7 +103,7 @@ enum SubmissionStatus: String, Codable {
 }
 
 // MARK: - User Submission
-struct UserSubmission: Identifiable, Codable {
+struct UserSubmission: Identifiable, Codable, Equatable {
     @DocumentID var id: String?
     var questionId: String
     let content: String
