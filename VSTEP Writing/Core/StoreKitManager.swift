@@ -1,6 +1,6 @@
-import StoreKit
-import FirebaseFirestore
 import FirebaseAuth
+import FirebaseFirestore
+import StoreKit
 
 typealias AppTransaction = StoreKit.Transaction
 
@@ -10,20 +10,22 @@ class StoreKitManager {
     // MARK: - Properties
     var products: [Product] = []
     var purchasedProductIDs: Set<String> = []
+    var expiryDates: [String: Date] = [:]  // Added: productID -> expiryDate for View
     var isLoading: Bool = false
     var errorMessage: String? = nil
 
-    private let productIDs = ["com.vstep.advanced", "com.vstep.premier"]
-    private let db = Firestore.firestore()
+    // Single source of productIDs - SubscriptionsView reads from here
+    let productIDs = ["com.vstep.advanced", "com.vstep.premier"]
+
     private var transactionListenerTask: Task<Void, Never>? = nil
 
     // MARK: - Init
     init() {
+        // Must start listener before anything else to avoid missing transactions
         transactionListenerTask = listenForTransactions()
         Task {
-            await finishAllUnfinishedTransactions()
             await loadProducts()
-            await updatePurchasedProducts()
+            await syncEntitlementsToFirebase()
         }
     }
 
@@ -31,31 +33,16 @@ class StoreKitManager {
         transactionListenerTask?.cancel()
     }
 
-    // MARK: - Finish mọi transaction chưa được finish (giải quyết Billing Problem)
-    func finishAllUnfinishedTransactions() async {
-        for await result in Transaction.unfinished {
-            switch result {
-            case .verified(let transaction):
-                await transaction.finish()
-                print("Finished unfinished transaction: \(transaction.productID)")
-            case .unverified(let transaction, let error):
-                await transaction.finish()
-                print("Finished unverified transaction \(transaction.productID): \(error)")
-            }
-        }
-    }
-
     // MARK: - Load Products
     func loadProducts() async {
         isLoading = true
         do {
             let loaded = try await Product.products(for: productIDs)
-            // Giữ đúng thứ tự advanced → premier
             products = productIDs.compactMap { id in
                 loaded.first(where: { $0.id == id })
             }
         } catch {
-            errorMessage = "Không thể tải sản phẩm: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
             print("Failed to load products: \(error)")
         }
         isLoading = false
@@ -66,14 +53,13 @@ class StoreKitManager {
         let result = try await product.purchase()
 
         switch result {
-        case let .success(.verified(transaction)):
+        case .success(.verified(let transaction)):
             await transaction.finish()
-            await updatePurchasedProducts()
-            await syncToFirebase(transaction: transaction, isActive: true)
+            await syncEntitlementsToFirebase()
             print("Purchase successful: \(transaction.productID)")
 
-        case let .success(.unverified(transaction, error)):
-            await transaction.finish()
+        case .success(.unverified(let transaction, let error)):
+            // Do not finish unverified - let Apple verify first
             print("Unverified transaction \(transaction.productID): \(error)")
 
         case .pending:
@@ -87,41 +73,21 @@ class StoreKitManager {
         }
     }
 
-    // MARK: - Update Purchased State
-    @MainActor
-    func updatePurchasedProducts() async {
-        var activeIDs: Set<String> = []
-
-        for await result in Transaction.currentEntitlements {
-            switch result {
-            case .verified(let transaction):
-                if transaction.revocationDate == nil {
-                    activeIDs.insert(transaction.productID)
-                }
-            case .unverified(_, let error):
-                print("Unverified entitlement: \(error)")
-            }
-        }
-
-        purchasedProductIDs = activeIDs
-    }
-
     // MARK: - Listen For Transactions
-    func listenForTransactions() -> Task<Void, Never> {
+    private func listenForTransactions() -> Task<Void, Never> {
         Task.detached { [weak self] in
             guard let self else { return }
             for await result in Transaction.updates {
                 switch result {
                 case .verified(let transaction):
                     await transaction.finish()
-                    await self.updatePurchasedProducts()
-                    let isActive = transaction.revocationDate == nil
-                    await self.syncToFirebase(transaction: transaction, isActive: isActive)
+                    // Every Apple event (renewal, refund) triggers a full sync
+                    await self.syncEntitlementsToFirebase()
 
                 case .unverified(let transaction, let error):
-                    // Finish luôn để không hiện Billing Problem dialog
-                    await transaction.finish()
-                    print("Unverified update \(transaction.productID): \(error)")
+                    print(
+                        "Unverified update \(transaction.productID): \(error)"
+                    )
                 }
             }
         }
@@ -131,10 +97,10 @@ class StoreKitManager {
     func restorePurchases() async {
         do {
             try await AppStore.sync()
-            await updatePurchasedProducts()
+            await syncEntitlementsToFirebase()
             print("Purchases restored")
         } catch {
-            errorMessage = "Không thể khôi phục: \(error.localizedDescription)"
+            errorMessage = error.localizedDescription
             print("Restore error: \(error)")
         }
     }
@@ -143,31 +109,75 @@ class StoreKitManager {
     func isPurchased(_ productID: String) -> Bool {
         purchasedProductIDs.contains(productID)
     }
+
+    func expiryDate(for productID: String) -> Date? {
+        expiryDates[productID]
+    }
 }
 
 // MARK: - Firebase Sync
 extension StoreKitManager {
 
-    func syncToFirebase(transaction: AppTransaction, isActive: Bool) async {
+    /// StoreKit is source of truth. Reads currentEntitlements and overwrites Firebase.
+    /// If no active entitlement found, writes inactive status to Firebase.
+    func syncEntitlementsToFirebase() async {
         guard let userID = Auth.auth().currentUser?.uid else { return }
 
-        var data: [String: Any] = [
-            "productID": transaction.productID,
-            "status": isActive ? "active" : "expired",
-            "startDate": Timestamp(date: transaction.purchaseDate),
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
+        var activeIDs: Set<String> = []
+        var collectedExpiry: [String: Date] = [:]
+        var latestTransaction: AppTransaction? = nil
+        var latestDate: Date = .distantPast
 
-        if let expiry = transaction.expirationDate {
-            data["expiryDate"] = Timestamp(date: expiry)
+        for await result in Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            guard transaction.revocationDate == nil else { continue }
+
+            activeIDs.insert(transaction.productID)
+
+            // Collect expiry per productID for View display
+            if let expiry = transaction.expirationDate {
+                collectedExpiry[transaction.productID] = expiry
+            }
+
+            if transaction.purchaseDate > latestDate {
+                latestDate = transaction.purchaseDate
+                latestTransaction = transaction
+            }
         }
 
+        await MainActor.run {
+            purchasedProductIDs = activeIDs
+            expiryDates = collectedExpiry  // Update expiry map for View
+        }
+
+        let ref = FirebaseService.shared.db
+            .collection("subscriptions")
+            .document(userID)
+
         do {
-            try await db
-                .collection("subscriptions")
-                .document(userID)
-                .setData(data, merge: true)
-            print("Firebase synced: \(transaction.productID) → \(isActive ? "active" : "expired")")
+            if let tx = latestTransaction {
+                var data: [String: Any] = [
+                    "productID": tx.productID,
+                    "status": "active",
+                    "startDate": Timestamp(date: tx.purchaseDate),
+                    "originalTransactionId": String(tx.originalID),
+                    "updatedAt": FieldValue.serverTimestamp(),
+                ]
+                if let expiry = tx.expirationDate {
+                    data["expiryDate"] = Timestamp(date: expiry)
+                }
+                // Use setData without merge to fully overwrite stale data
+                try await ref.setData(data)
+                print("Firebase synced active: \(tx.productID)")
+            } else {
+                try await ref.setData([
+                    "productID": NSNull(),
+                    "status": "inactive",
+                    "expiryDate": NSNull(),
+                    "updatedAt": FieldValue.serverTimestamp(),
+                ])
+                print("Firebase synced: no active subscription")
+            }
         } catch {
             print("Firebase sync error: \(error.localizedDescription)")
         }

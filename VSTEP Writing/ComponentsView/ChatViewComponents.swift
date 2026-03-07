@@ -374,35 +374,40 @@ struct TypingIndicatorView: View {
     }
 }
 
-// ─────────────────────────────────────────────
 // MARK: - ChatInputView
-// ─────────────────────────────────────────────
-
-// Bottom input bar for composing and sending messages
 struct ChatInputView: View {
 
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
+    var isDisabled: Bool = false  // Added: controls locked state for free users
     var onSend: () -> Void
 
     private var canSend: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isDisabled
     }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            TextField("Ask something...", text: $text, axis: .vertical)
-                .lineLimit(1...5)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .glassEffect()
-                .focused(isFocused)
+            TextField(
+                isDisabled
+                    ? "Upgrade to use the AI chatbot..." : "Ask something...",
+                text: $text,
+                axis: .vertical
+            )
+            .lineLimit(1...5)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .glassEffect()
+            .focused(isFocused)
+            .disabled(isDisabled)
 
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(
-                        canSend ? Color.accentColor : Color.secondary
+                        canSend
+                            ? Color.accentColor : Color.secondary.opacity(0.4)
                     )
             }
             .disabled(!canSend)
@@ -412,7 +417,8 @@ struct ChatInputView: View {
         .padding(.vertical, 12)
         .background(Color(.systemGroupedBackground))
     }
-}  // ChatInputView closes here
+}
+// ChatInputView closes here
 
 // ─────────────────────────────────────────────
 // MARK: - ChatHistoryView

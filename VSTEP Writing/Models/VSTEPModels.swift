@@ -12,7 +12,6 @@ struct VSTEPTask: Identifiable, Codable {
     let timeLimit: Int
     let taskType: String
 
-    // @DocumentID tự xử lý — không đưa vào CodingKeys [web:9]
     enum CodingKeys: String, CodingKey {
         case taskId, name, description, minWords, timeLimit, taskType
     }
@@ -21,7 +20,7 @@ struct VSTEPTask: Identifiable, Codable {
 // MARK: - Question Model
 struct VSTEPQuestion: Identifiable, Codable {
     @DocumentID var id: String?
-    let questionId: String  // non-optional: luôn có trong Firestore doc
+    let questionId: String
     let taskType: String
     let category: String
     let title: String
@@ -33,10 +32,10 @@ struct VSTEPQuestion: Identifiable, Codable {
     let formalityLevel: String?
     let essayType: String?
     let difficulty: String
-    var tags: [String]  // var: tránh crash nếu field vắng trong Firestore
+    var tags: [String]
     let suggestedStructure: [String]?
 
-    // MARK: Computed
+    // Computed from taskType - Firestore does not store these
     var isTask1: Bool { taskType == "task1" }
     var isTask2: Bool { taskType == "task2" }
     var minWords: Int { isTask1 ? 120 : 250 }
@@ -44,9 +43,9 @@ struct VSTEPQuestion: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case questionId, taskType, category, title, situation
-        case task
-        case topic, instruction, requirements, formalityLevel, essayType
+        case task, topic, instruction, requirements, formalityLevel, essayType
         case difficulty, tags, suggestedStructure
+        // minWords and timeLimit excluded - they are computed, not stored
     }
 }
 
@@ -73,7 +72,7 @@ struct RubricLevel: Codable {
     let descriptor: String
 }
 
-// MARK: - Submission Status (top-level — FirebaseService cần dùng trực tiếp)
+// MARK: - Submission Status
 enum SubmissionStatus: String, Codable {
     case draft = "draft"
     case submitted = "submitted"
@@ -118,19 +117,12 @@ struct UserSubmission: Identifiable, Codable, Equatable {
     var essayText: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case questionId
-        case content
-        case wordCount
-        case submittedAt
-        case score
-        case feedback
-        case overallComment
-        case suggestions
-        case criteria
-        case status
-        case essayText
+        case questionId, content, wordCount, submittedAt
+        case score, feedback, overallComment, suggestions
+        case criteria, status, essayText
     }
 }
+
 struct SubmissionCriterion: Codable, Hashable {
     let name: String
     let score: Double?
@@ -141,14 +133,148 @@ struct SubmissionCriterion: Codable, Hashable {
 // MARK: - User Progress
 struct UserProgress: Codable {
     var completedQuestions: [String]
-    var averageScore: Double  // var: FirebaseService cần ghi trực tiếp
+    var averageScore: Double
     var totalSubmissions: Int
-    var lastActivityDate: Date?  // optional: serverTimestamp nil khi mới tạo
+    var lastActivityDate: Date?
     var task1Completed: Int
     var task2Completed: Int
 }
 
-// MARK: - Firebase Service Error (hợp nhất từ cả 2 phiên bản)
+// MARK: - Plan Benefits
+struct PlanBenefits: Codable {
+    let unlimitedTests: Bool
+    let aiGrammarCheck: Bool
+    let detailedAnalytics: Bool
+    let offlineMode: Bool
+    let prioritySupport: Bool
+    let adsRemoved: Bool
+
+    // Safe decode - fallback when Firebase field is missing
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        unlimitedTests =
+            try container.decodeIfPresent(Bool.self, forKey: .unlimitedTests)
+            ?? false
+        aiGrammarCheck =
+            try container.decodeIfPresent(Bool.self, forKey: .aiGrammarCheck)
+            ?? true
+        detailedAnalytics =
+            try container.decodeIfPresent(Bool.self, forKey: .detailedAnalytics)
+            ?? false
+        offlineMode =
+            try container.decodeIfPresent(Bool.self, forKey: .offlineMode)
+            ?? false
+        prioritySupport =
+            try container.decodeIfPresent(Bool.self, forKey: .prioritySupport)
+            ?? false
+        adsRemoved =
+            try container.decodeIfPresent(Bool.self, forKey: .adsRemoved)
+            ?? false
+    }
+}
+
+// MARK: - Plan Limits
+struct PlanLimits: Codable {
+    let gradingAttemptsPerEssay: Int
+    let maxEssaysPerDay: Int
+    let chatbotQuestionsPerDay: Int
+    let submissionsPerEssayPerDay: Int
+
+    // Fallback defaults when Firebase has not loaded yet
+    static let freeFallback = PlanLimits(
+        gradingAttemptsPerEssay: 1,
+        maxEssaysPerDay: 2,
+        chatbotQuestionsPerDay: 0,
+        submissionsPerEssayPerDay: 1
+    )
+
+    static let advancedFallback = PlanLimits(
+        gradingAttemptsPerEssay: 3,
+        maxEssaysPerDay: 3,
+        chatbotQuestionsPerDay: 10,
+        submissionsPerEssayPerDay: 3
+    )
+
+    static let premierFallback = PlanLimits(
+        gradingAttemptsPerEssay: 5,
+        maxEssaysPerDay: 5,
+        chatbotQuestionsPerDay: 50,
+        submissionsPerEssayPerDay: 5
+    )
+
+    // Safe decode - fallback when Firebase field is missing
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        gradingAttemptsPerEssay =
+            try c.decodeIfPresent(Int.self, forKey: .gradingAttemptsPerEssay)
+            ?? 1
+        maxEssaysPerDay =
+            try c.decodeIfPresent(Int.self, forKey: .maxEssaysPerDay) ?? 2
+        chatbotQuestionsPerDay =
+            try c.decodeIfPresent(Int.self, forKey: .chatbotQuestionsPerDay)
+            ?? 0
+        submissionsPerEssayPerDay =
+            try c.decodeIfPresent(Int.self, forKey: .submissionsPerEssayPerDay)
+            ?? 1
+    }
+
+    init(
+        gradingAttemptsPerEssay: Int,
+        maxEssaysPerDay: Int,
+        chatbotQuestionsPerDay: Int,
+        submissionsPerEssayPerDay: Int
+    ) {
+        self.gradingAttemptsPerEssay = gradingAttemptsPerEssay
+        self.maxEssaysPerDay = maxEssaysPerDay
+        self.chatbotQuestionsPerDay = chatbotQuestionsPerDay
+        self.submissionsPerEssayPerDay = submissionsPerEssayPerDay
+    }
+}
+
+// MARK: - Plan (IAP)
+struct Plan: Codable, Identifiable {
+    @DocumentID var id: String?
+    let displayName: String
+    let benefits: PlanBenefits
+    let limits: PlanLimits?  // Optional: free plan only has limits, no benefits
+
+    enum CodingKeys: String, CodingKey {
+        case displayName, benefits, limits
+    }
+}
+
+// MARK: - Daily Usage
+struct DailyUsage: Codable {
+    var gradingAttemptsPerEssay: [String: Int]  // questionId -> count
+    var totalEssaysGradedToday: Int
+    var chatbotQuestionsToday: Int
+    var submissionsPerEssay: [String: Int]  // questionId -> count
+
+    static let empty = DailyUsage(
+        gradingAttemptsPerEssay: [:],
+        totalEssaysGradedToday: 0,
+        chatbotQuestionsToday: 0,
+        submissionsPerEssay: [:]
+    )
+}
+
+// MARK: - Usage Check Result
+enum UsageCheckResult {
+    case allowed
+    case denied(reason: String)
+
+    var isAllowed: Bool {
+        if case .allowed = self { return true }
+        return false
+    }
+
+    var deniedReason: String? {
+        if case .denied(let reason) = self { return reason }
+        return nil
+    }
+}
+
+// MARK: - Firebase Service Error
 enum FirebaseServiceError: LocalizedError {
     case notAuthenticated
     case documentNotFound
@@ -159,33 +285,13 @@ enum FirebaseServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAuthenticated: return "Vui lòng đăng nhập để tiếp tục."
-        case .documentNotFound: return "Không tìm thấy dữ liệu yêu cầu."
-        case .invalidData: return "Định dạng dữ liệu không hợp lệ."
-        case .encodingFailed: return "Không thể mã hoá dữ liệu."
-        case .uploadFailed: return "Tải dữ liệu lên thất bại."
-        case .networkError: return "Lỗi kết nối mạng."
+        case .notAuthenticated: return "Please sign in to continue."
+        case .documentNotFound: return "Requested data not found."
+        case .invalidData: return "Invalid data format."
+        case .encodingFailed: return "Failed to encode data."
+        case .uploadFailed: return "Upload failed."
+        case .networkError: return "Network connection error."
         }
-    }
-}
-
-// MARK: - Plan (IAP)
-struct PlanBenefits: Codable {
-    let unlimitedTests: Bool
-    let detailedAnalytics: Bool
-    let offlineMode: Bool
-    let prioritySupport: Bool
-    let adsRemoved: Bool
-}
-
-struct Plan: Codable, Identifiable {
-    @DocumentID var id: String?
-    let displayName: String
-    let price: Int
-    let benefits: PlanBenefits
-
-    enum CodingKeys: String, CodingKey {
-        case displayName, price, benefits
     }
 }
 
@@ -248,8 +354,10 @@ enum BiometricError: LocalizedError {
         case .notEnrolled:
             return
                 "No biometric data enrolled. Please set up Face ID in Settings."
-        case .failed(let error): return error.localizedDescription
-        case .cancelled: return "Authentication was cancelled."
+        case .failed(let error):
+            return error.localizedDescription
+        case .cancelled:
+            return "Authentication was cancelled."
         }
     }
 }
@@ -261,12 +369,12 @@ enum BiometricType {
     case none
 }
 
+// MARK: - Chat Models
 enum MessageRole: String {
     case user = "user"
     case model = "model"
 }
 
-// Represents a single message in the VSTEP writing chat session
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: MessageRole
@@ -284,19 +392,40 @@ struct ChatMessage: Identifiable, Equatable {
         self.content = content
         self.timestamp = timestamp
     }
+}
 
-    // Maps a ChatMessage to Genkit-compatible dictionary format for Firebase Functions
-    func toGenkitDict() -> [String: Any] {
-        return [
-            "role": role.rawValue,
-            "content": [
-                ["text": content]
-            ],
-        ]
+// Codable representation for Firestore storage
+struct ChatMessageRecord: Codable {
+    let id: String
+    let role: String
+    let content: String
+    let timestamp: Date
+
+    init(from message: ChatMessage) {
+        self.id = message.id.uuidString
+        self.role = message.role.rawValue
+        self.content = message.content
+        self.timestamp = message.timestamp
+    }
+
+    func toChatMessage() -> ChatMessage {
+        ChatMessage(
+            id: UUID(uuidString: id) ?? UUID(),
+            role: MessageRole(rawValue: role) ?? .model,
+            content: content,
+            timestamp: timestamp
+        )
     }
 }
 
-// Represents recoverable error states from the askAI Cloud Function
+struct ChatSession: Codable, Identifiable {
+    @DocumentID var id: String?
+    var createdAt: Date
+    var updatedAt: Date
+    var messages: [ChatMessageRecord]
+}
+
+// MARK: - AI Chat Error
 enum AIChatError: LocalizedError {
     case invalidResponseFormat
     case unauthenticated
@@ -317,176 +446,11 @@ enum AIChatError: LocalizedError {
     }
 }
 
-// ─────────────────────────────────────────────
-// MARK: - Chat Session Models
-// ─────────────────────────────────────────────
-
-// Codable representation of ChatMessage for Firestore storage
-struct ChatMessageRecord: Codable {
-    let id: String
-    let role: String
-    let content: String
-    let timestamp: Date
-
-    // Converts from ChatMessage to a Firestore-compatible record
-    init(from message: ChatMessage) {
-        self.id = message.id.uuidString
-        self.role = message.role.rawValue
-        self.content = message.content
-        self.timestamp = message.timestamp
-    }
-
-    // Converts back from Firestore record to ChatMessage for UI use
-    func toChatMessage() -> ChatMessage {
-        ChatMessage(
-            id: UUID(uuidString: id) ?? UUID(),
-            role: MessageRole(rawValue: role) ?? .model,
-            content: content,
-            timestamp: timestamp
-        )
-    }
-}
-
-// Represents a full chat session stored in Firestore
-struct ChatSession: Codable, Identifiable {
-    @DocumentID var id: String?
-    var createdAt: Date
-    var updatedAt: Date
-    var messages: [ChatMessageRecord]
-}
-
-// ─────────────────────────────────────────────
-// MARK: - Markdown Renderer Models
-// ─────────────────────────────────────────────
-
+// MARK: - Markdown Block
 // Represents a parsed block-level markdown element
 enum MarkdownBlock {
     case paragraph(String)
     case numberedItem(Int, String)
     case bulletItem(String, Int)
     case spacer
-}
-
-// Parses raw markdown string into structured MarkdownBlock array
-struct MarkdownParser {
-
-    static func parse(_ content: String) -> [MarkdownBlock] {
-        let lines = content.components(separatedBy: "\n")
-        var blocks: [MarkdownBlock] = []
-        var numberedCounter = 0
-        var lastWasContent = false
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            // Empty line produces a spacer between content blocks
-            if trimmed.isEmpty {
-                if lastWasContent {
-                    blocks.append(.spacer)
-                    lastWasContent = false
-                }
-                continue
-            }
-
-            // Numbered list: matches "1. text" or "1.  text"
-            if let match = trimmed.firstMatch(of: /^(\d+)\.\s+(.+)$/) {
-                numberedCounter = Int(match.1) ?? (numberedCounter + 1)
-                blocks.append(.numberedItem(numberedCounter, String(match.2)))
-                lastWasContent = true
-                continue
-            }
-
-            // Bullet list with indentation level derived from leading spaces
-            let leadingSpaces = line.prefix(while: { $0 == " " }).count
-            let level = leadingSpaces / 4
-
-            if trimmed.hasPrefix("* ") || trimmed.hasPrefix("- ") {
-                let text = String(trimmed.dropFirst(2))
-                blocks.append(.bulletItem(text, level))
-                lastWasContent = true
-                numberedCounter = 0
-                continue
-            }
-
-            // Regular paragraph
-            numberedCounter = 0
-            blocks.append(.paragraph(trimmed))
-            lastWasContent = true
-        }
-
-        return blocks
-    }
-}
-
-// ─────────────────────────────────────────────
-// MARK: - MarkdownView
-// ─────────────────────────────────────────────
-
-// Renders parsed markdown blocks with proper indentation and spacing
-struct MarkdownView: View {
-
-    let content: String
-    let textColor: Color
-
-    private var blocks: [MarkdownBlock] { MarkdownParser.parse(content) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                blockView(block)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .textSelection(.enabled)
-    }
-
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block {
-        case .paragraph(let text):
-            Text(inlineMarkdown(text))
-                .font(.body)
-                .foregroundColor(textColor)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 2)
-
-        case .numberedItem(let index, let text):
-            HStack(alignment: .top, spacing: 6) {
-                Text("\(index).")
-                    .font(.body.monospacedDigit())
-                    .foregroundColor(textColor)
-                    .frame(minWidth: 24, alignment: .trailing)
-                Text(inlineMarkdown(text))
-                    .font(.body)
-                    .foregroundColor(textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.leading, 4)
-
-        case .bulletItem(let text, let level):
-            HStack(alignment: .top, spacing: 8) {
-                Text(level == 0 ? "•" : "◦")
-                    .font(.body)
-                    .foregroundColor(textColor.opacity(0.7))
-                    .frame(width: 12, alignment: .center)
-                Text(inlineMarkdown(text))
-                    .font(.body)
-                    .foregroundColor(textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.leading, CGFloat(level) * 16 + 4)
-
-        case .spacer:
-            Spacer().frame(height: 4)
-        }
-    }
-
-    // Converts inline markdown to AttributedString for bold/italic rendering
-    private func inlineMarkdown(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full
-        )
-        return (try? AttributedString(markdown: text, options: options))
-            ?? AttributedString(text)
-    }
 }

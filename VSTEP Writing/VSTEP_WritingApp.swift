@@ -189,12 +189,18 @@ struct VSTEP_WritingApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authManager = AuthenticationManager.shared
     @StateObject private var firebaseService = FirebaseService.shared
+    // Single shared instance for entire app lifetime
+    @State private var store = StoreKitManager()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authManager)
                 .environmentObject(firebaseService)
+                .environment(store) 
+                .task {
+                    await AIUsageManager.shared.loadInitialData()
+                }
                 .onOpenURL { url in
                     // Google Sign In callback - fallback for SwiftUI lifecycle
                     GIDSignIn.sharedInstance.handle(url)

@@ -1,38 +1,31 @@
-import SwiftUI
 import StoreKit
-import FirebaseFirestore
-import FirebaseAuth
-
+import SwiftUI
 
 // MARK: - SubscriptionsView
-
 struct SubscriptionsView: View {
 
-    @State private var store = StoreKitManager()
+    @Environment(StoreKitManager.self) private var store
     @State private var plans: [String: Plan] = [:]
-    @State private var activeProductID: String? = nil
-    @State private var expiryDate: Date? = nil
     @State private var alertMessage: AlertMessage? = nil
     @State private var isRestoring = false
+    @Environment(\.scenePhase) private var scenePhase
 
-    private let db = Firestore.firestore()
-    private let productIDs = ["com.vstep.advanced", "com.vstep.premier"]
+    private var activeProductID: String? {
+        store.productIDs.first { store.isPurchased($0) }
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
 
-                // Header Card
                 headerCard
                     .padding()
 
-                // Active Subscription Status (nếu đang có)
                 if activeProductID != nil {
                     activeSubscriptionSection
                         .padding(.horizontal)
                 }
 
-                // Plans
                 if store.isLoading {
                     ProgressView("Loading plans...")
                         .padding(40)
@@ -41,7 +34,6 @@ struct SubscriptionsView: View {
                         .padding(.horizontal)
                 }
 
-                // Restore Button
                 restoreButton
                     .padding(.horizontal)
                     .padding(.bottom, 40)
@@ -60,7 +52,12 @@ struct SubscriptionsView: View {
         }
         .task {
             await loadFirebasePlans()
-            await loadActiveSubscription()
+            await store.syncEntitlementsToFirebase()
+        }
+        .task(id: scenePhase) {
+            if scenePhase == .active {
+                await store.syncEntitlementsToFirebase()
+            }
         }
     }
 
@@ -70,16 +67,17 @@ struct SubscriptionsView: View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.yellow.opacity(0.15))
+                    .fill(BrandColor.muted)
                     .frame(width: 100, height: 100)
 
                 Image(systemName: "crown.fill")
                     .font(.system(size: 48))
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(BrandColor.primary)
             }
 
             Text("VSTEP Writing Premium")
                 .font(.title2.bold())
+                .foregroundStyle(BrandColor.primary)
 
             Text("Unlock your full writing potential")
                 .font(.subheadline)
@@ -98,7 +96,7 @@ struct SubscriptionsView: View {
             HStack(spacing: 15) {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(BrandColor.light)
                     .frame(width: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -106,22 +104,23 @@ struct SubscriptionsView: View {
                         .font(.system(size: 17, weight: .regular))
                         .foregroundStyle(.primary)
 
-                    if let id = activeProductID,
-                       let plan = plans[id] {
+                    if let id = activeProductID, let plan = plans[id] {
                         Text(plan.displayName)
                             .font(.caption)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(BrandColor.medium)
                     }
                 }
 
                 Spacer()
 
-                if let date = expiryDate {
+                if let id = activeProductID,
+                    let expiry = store.expiryDate(for: id)
+                {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Renews")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                        Text(date.formatted(.dateTime.day().month().year()))
+                        Text(expiry.formatted(.dateTime.day().month().year()))
                             .font(.caption.bold())
                             .foregroundStyle(.secondary)
                     }
@@ -131,7 +130,7 @@ struct SubscriptionsView: View {
             .padding(.vertical, 16)
             .glassEffect()
 
-            HStack(spacing: 8) {
+            HStack {
                 Text("Manage your subscription in App Store settings")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -147,6 +146,7 @@ struct SubscriptionsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a Plan")
                 .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(BrandColor.primary)
                 .padding(.leading, 4)
 
             ForEach(store.products) { product in
@@ -156,9 +156,9 @@ struct SubscriptionsView: View {
     }
 
     private func planCard(product: Product) -> some View {
-//        let isPurchased = store.isPurchased(product.id)
         let plan = plans[product.id]
         let isActive = activeProductID == product.id
+        let limits = AIUsageManager.shared.planLimits[product.id]
 
         return VStack(spacing: 0) {
 
@@ -166,7 +166,9 @@ struct SubscriptionsView: View {
             HStack(spacing: 15) {
                 Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 26))
-                    .foregroundStyle(isActive ? .green : .blue)
+                    .foregroundStyle(
+                        isActive ? BrandColor.light : BrandColor.primary
+                    )
                     .frame(width: 40)
                     .contentTransition(.symbolEffect(.replace))
 
@@ -177,7 +179,7 @@ struct SubscriptionsView: View {
 
                     Text(product.displayPrice + "/month")
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.medium)
                 }
 
                 Spacer()
@@ -188,13 +190,12 @@ struct SubscriptionsView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .background(Capsule().fill(.green))
+                        .background(Capsule().fill(BrandColor.light))
                 } else {
                     Button {
                         Task {
                             do {
                                 try await store.purchase(product)
-                                await loadActiveSubscription()
                             } catch {
                                 alertMessage = AlertMessage(
                                     title: "Purchase Failed",
@@ -208,65 +209,188 @@ struct SubscriptionsView: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Capsule().fill(.blue))
+                            .background(Capsule().fill(BrandColor.primary))
                     }
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
 
-            // Divider
             Divider()
                 .padding(.leading, 70)
 
-            // Benefits List
+            // Live Limits Section
+            if let limits {
+                liveLimitsSection(limits: limits)
+
+                Divider()
+                    .padding(.leading, 70)
+            }
+
+            // Benefits Section
             if let benefits = plan?.benefits {
                 VStack(spacing: 0) {
-                    benefitRow(icon: "infinity", title: "Unlimited Essays", enabled: benefits.unlimitedTests)
-                    benefitRow(icon: "waveform.and.mic", title: "AI Grammar Check", enabled: true)
-                    benefitRow(icon: "chart.bar.fill", title: "Advanced Analytics", enabled: benefits.detailedAnalytics)
-                    benefitRow(icon: "wifi.slash", title: "Offline Mode", enabled: benefits.offlineMode)
-                    benefitRow(icon: "star.fill", title: "Priority Support", enabled: benefits.prioritySupport)
-                    benefitRow(icon: "xmark.circle.fill", title: "Remove Ads", enabled: benefits.adsRemoved, isLast: true)
+                    benefitRow(
+                        icon: "infinity",
+                        title: "Unlimited Essay Submissions",
+                        subtitle:
+                            "\(limits?.submissionsPerEssayPerDay ?? 1) submissions/essay · \(limits?.maxEssaysPerDay ?? 1) essays/day",
+                        enabled: benefits.unlimitedTests
+                    )
+                    benefitRow(
+                        icon: "brain.head.profile",
+                        title: "AI Essay Grading",
+                        subtitle:
+                            "\(limits?.gradingAttemptsPerEssay ?? 1) AI attempts/essay per day",
+                        enabled: benefits.aiGrammarCheck
+                    )
+                    benefitRow(
+                        icon: "bubble.left.and.bubble.right.fill",
+                        title: "AI Writing Chatbot",
+                        subtitle:
+                            "\(limits?.chatbotQuestionsPerDay ?? 0) questions/day",
+                        enabled: benefits.aiGrammarCheck
+                    )
+                    benefitRow(
+                        icon: "chart.bar.fill",
+                        title: "Advanced Analytics",
+                        subtitle: nil,
+                        enabled: benefits.detailedAnalytics,
+                        badge: .comingSoon
+                    )
+                    benefitRow(
+                        icon: "star.fill",
+                        title: "Priority Support",
+                        subtitle: nil,
+                        enabled: benefits.prioritySupport,
+                        badge: .comingSoon
+                    )
+                    benefitRow(
+                        icon: "xmark.circle.fill",
+                        title: "Remove Ads",
+                        subtitle: nil,
+                        enabled: benefits.adsRemoved,
+                        isLast: true
+                    )
                 }
             } else {
-                // Skeleton fallback nếu Firebase chưa load
-                VStack(spacing: 0) {
-                    ForEach(0..<4, id: \.self) { _ in
-                        HStack {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(width: 20, height: 20)
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.secondary.opacity(0.2))
-                                .frame(height: 14)
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-                }
+                skeletonBenefits
             }
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    private func benefitRow(icon: String, title: String, enabled: Bool, isLast: Bool = false) -> some View {
+    // MARK: - Live Limits Section
+
+    private func liveLimitsSection(limits: PlanLimits) -> some View {
+        HStack(spacing: 0) {
+            limitBadge(
+                icon: "doc.text.fill",
+                value: "\(limits.maxEssaysPerDay)",
+                label: "Essays/day"
+            )
+
+            Divider()
+                .frame(height: 36)
+
+            limitBadge(
+                icon: "brain.head.profile",
+                value: "\(limits.gradingAttemptsPerEssay)x",
+                label: "AI Grading"
+            )
+
+            Divider()
+                .frame(height: 36)
+
+            limitBadge(
+                icon: "bubble.left.fill",
+                value: limits.chatbotQuestionsPerDay == 0
+                    ? "—"
+                    : "\(limits.chatbotQuestionsPerDay)",
+                label: "Chat/day"
+            )
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+    }
+
+    private func limitBadge(icon: String, value: String, label: String)
+        -> some View
+    {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(BrandColor.medium)
+
+            Text(value)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(BrandColor.primary)
+
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Benefit Row
+
+    private enum BenefitBadge {
+        case comingSoon
+    }
+
+    private func benefitRow(
+        icon: String,
+        title: String,
+        subtitle: String?,
+        enabled: Bool,
+        badge: BenefitBadge? = nil,
+        isLast: Bool = false
+    ) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 15) {
                 Image(systemName: enabled ? icon : "xmark")
                     .font(.system(size: 16))
-                    .foregroundStyle(enabled ? .green : Color.secondary.opacity(0.4))
+                    .foregroundStyle(
+                        enabled
+                            ? BrandColor.light : Color.secondary.opacity(0.4)
+                    )
                     .frame(width: 40)
 
-                Text(title)
-                    .font(.system(size: 15))
-                    .foregroundStyle(enabled ? .primary : Color.secondary.opacity(0.5))
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 15))
+                            .foregroundStyle(
+                                enabled
+                                    ? .primary : Color.secondary.opacity(0.5)
+                            )
+
+                        if let badge, case .comingSoon = badge {
+                            Text("Soon")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(BrandColor.soft))
+                        }
+                    }
+
+                    if let subtitle, enabled {
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(BrandColor.medium)
+                    }
+                }
 
                 Spacer()
 
                 Image(systemName: enabled ? "checkmark" : "minus")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(enabled ? .green : Color.secondary.opacity(0.4))
+                    .foregroundStyle(
+                        enabled
+                            ? BrandColor.light : Color.secondary.opacity(0.4)
+                    )
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)
@@ -274,6 +398,25 @@ struct SubscriptionsView: View {
             if !isLast {
                 Divider()
                     .padding(.leading, 70)
+            }
+        }
+    }
+
+    // MARK: - Skeleton
+
+    private var skeletonBenefits: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<4, id: \.self) { _ in
+                HStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(width: 20, height: 20)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 14)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
             }
         }
     }
@@ -286,7 +429,6 @@ struct SubscriptionsView: View {
                 Task {
                     isRestoring = true
                     await store.restorePurchases()
-                    await loadActiveSubscription()
                     isRestoring = false
                     alertMessage = AlertMessage(
                         title: "Restored",
@@ -295,11 +437,15 @@ struct SubscriptionsView: View {
                 }
             } label: {
                 HStack(spacing: 15) {
-                    Image(systemName: isRestoring ? "arrow.triangle.2.circlepath" : "clock.arrow.circlepath")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.blue)
-                        .frame(width: 40)
-                        .symbolEffect(.rotate, isActive: isRestoring)
+                    Image(
+                        systemName: isRestoring
+                            ? "arrow.triangle.2.circlepath"
+                            : "clock.arrow.circlepath"
+                    )
+                    .font(.system(size: 24))
+                    .foregroundStyle(BrandColor.primary)
+                    .frame(width: 40)
+                    .symbolEffect(.rotate, isActive: isRestoring)
 
                     Text("Restore Purchases")
                         .font(.system(size: 17, weight: .regular))
@@ -313,7 +459,7 @@ struct SubscriptionsView: View {
             .buttonStyle(.plain)
             .glassEffect()
 
-            HStack(spacing: 8) {
+            HStack {
                 Text("Already purchased? Tap to restore your subscription.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -323,50 +469,12 @@ struct SubscriptionsView: View {
         }
     }
 
-    // MARK: - Firebase
+    // MARK: - Load Plans via FirebaseService
 
     private func loadFirebasePlans() async {
-        for id in productIDs {
-            do {
-                let doc = try await db.collection("plans").document(id).getDocument()
-                print("📄 [\(id)] exists: \(doc.exists)")
-                print("📄 [\(id)] raw: \(String(describing: doc.data()))")
-
-                guard doc.exists else { continue }
-
-                do {
-                    let plan = try doc.data(as: Plan.self)
-                    await MainActor.run { plans[id] = plan }
-                    print("[\(id)] decoded: \(plan.displayName)")
-                } catch {
-                    print("❌ [\(id)] decode error: \(error)")
-                }
-            } catch {
-                print("❌ [\(id)] fetch error: \(error)")
-            }
-        }
-    }
-
-    private func loadActiveSubscription() async {
-        guard let userID = Auth.auth().currentUser?.uid else { return }
-        do {
-            let doc = try await db.collection("subscriptions").document(userID).getDocument()
-            let data = doc.data()
-            let status = data?["status"] as? String
-            let productID = data?["productID"] as? String
-            let expiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
-
-            await MainActor.run {
-                if status == "active", let id = productID {
-                    activeProductID = id
-                    expiryDate = expiry
-                } else {
-                    activeProductID = nil
-                    expiryDate = nil
-                }
-            }
-        } catch {
-            print("Firebase fetch subscription error: \(error.localizedDescription)")
-        }
+        let fetched = await FirebaseService.shared.fetchPlans(
+            productIDs: store.productIDs
+        )
+        await MainActor.run { plans = fetched }
     }
 }
