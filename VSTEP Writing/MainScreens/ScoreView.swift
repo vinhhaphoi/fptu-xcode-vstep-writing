@@ -29,6 +29,7 @@ struct QuestionAttemptGroup: Identifiable, Hashable {
 struct ScoreView: View {
     @StateObject private var firebaseService = FirebaseService.shared
     @State private var submissions: [UserSubmission] = []
+    @Environment(StoreKitManager.self) private var store
     @State private var isLoading = false
     @State private var errorMessage: String?
     // Navigation destination state
@@ -133,7 +134,8 @@ struct ScoreView: View {
                     question: question,
                     questionNumber: questionNumber,
                     latestSubmission: group.latestAttempt,
-                    submissionHistory: group.attempts
+                    submissionHistory: group.attempts,
+                    store: store
                 )
             }
         }

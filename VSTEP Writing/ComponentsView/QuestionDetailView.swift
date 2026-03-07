@@ -1,13 +1,13 @@
-// QuestionDetailView.swift
 import SwiftUI
 
 // MARK: - QuestionDetailView
-
 struct QuestionDetailView: View {
+
     let question: VSTEPQuestion
     var questionNumber: Int = 0
     var latestSubmission: UserSubmission? = nil
     var submissionHistory: [UserSubmission] = []
+    let store: StoreKitManager  // Added: for usage limit checks
     var onSubmit: ((String) -> Void)? = nil
     var onRefresh: (() async -> Void)? = nil
 
@@ -15,17 +15,33 @@ struct QuestionDetailView: View {
     @State private var essayText = ""
     @State private var showSubmitConfirm = false
     @State private var isSubmitting = false
-    // NEW: controls whether user is in re-submit writing mode
     @State private var isResubmitting = false
+    @State private var showLimitAlert = false
+    @State private var limitAlertMessage = ""
 
-    private var taskColor: Color { question.isTask1 ? .blue : .purple }
+    private var taskColor: Color {
+        question.isTask1 ? BrandColor.light : BrandColor.medium
+    }
     private var hasHistory: Bool { !submissionHistory.isEmpty }
     private var wordCount: Int {
         essayText.split(separator: " ").filter { !$0.isEmpty }.count
     }
-    private var minWords: Int { 10 }
+    private var minWords: Int { question.minWords }
 
-    // Whether to show the writing form (first submit OR re-submit mode)
+    private var remainingGrading: Int {
+        AIUsageManager.shared.remainingGrading(
+            for: question.questionId,
+            store: store
+        )
+    }
+
+    private var canSubmitToday: Bool {
+        AIUsageManager.shared.canSubmit(
+            questionId: question.questionId,
+            store: store
+        ).isAllowed
+    }
+
     private var shouldShowWritingForm: Bool {
         latestSubmission == nil || isResubmitting
     }
@@ -43,27 +59,25 @@ struct QuestionDetailView: View {
                     promptContent
                     writingSection
                 }
+
                 Spacer(minLength: 40)
             }
             .padding()
         }
-        .refreshable {
-            await onRefresh?()
-        }
+        .refreshable { await onRefresh?() }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Question \(questionNumber)")
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    //
+                    // Placeholder for report action
                 } label: {
                     Image(systemName: "exclamationmark.circle")
                         .foregroundStyle(.red)
                 }
             }
 
-            // Cancel button: shown only when re-submitting
             if isResubmitting {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") {
@@ -73,25 +87,36 @@ struct QuestionDetailView: View {
                     .tint(.red)
                 }
             } else {
-                // Re-submit button: shown when there is already a graded submission
                 if latestSubmission != nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
+                            // Check grading limit before allowing re-submit
+                            let check = AIUsageManager.shared.canGrade(
+                                questionId: question.questionId,
+                                store: store
+                            )
+                            guard check.isAllowed else {
+                                limitAlertMessage =
+                                    check.deniedReason ?? "Limit reached."
+                                showLimitAlert = true
+                                return
+                            }
                             essayText = ""
                             isResubmitting = true
                         } label: {
                             Image(systemName: "square.and.pencil")
+                                .foregroundStyle(BrandColor.primary)
                         }
                     }
                 }
 
-                // History button: shown when there is submission history
                 if hasHistory {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             showHistorySheet = true
                         } label: {
                             Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(BrandColor.primary)
                         }
                     }
                 }
@@ -122,7 +147,12 @@ struct QuestionDetailView: View {
                 )
             }
         }
-        // Reset states when parent delivers a new submission after re-submit
+        .alert("Limit Reached", isPresented: $showLimitAlert) {
+            Button("OK", role: .cancel) {}
+            Button("View Plans") {}  // Can navigate to SubscriptionsView
+        } message: {
+            Text(limitAlertMessage)
+        }
         .onChange(of: latestSubmission) { _, _ in
             isSubmitting = false
             isResubmitting = false
@@ -178,28 +208,24 @@ struct QuestionDetailView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let task = question.task {
                 Text(task)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let topic = question.topic {
                 Text(topic)
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let instruction = question.instruction {
                 Text(instruction)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let requirements = question.requirements, !requirements.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
@@ -220,7 +246,6 @@ struct QuestionDetailView: View {
                     }
                 }
             }
-
             if let structure = question.suggestedStructure, !structure.isEmpty {
                 Divider()
                 DisclosureGroup {
@@ -240,35 +265,35 @@ struct QuestionDetailView: View {
                                     )
                             }
                         }
+                        .padding(.top, 6)
                     }
-                    .padding(.top, 6)
                 } label: {
                     Text("Suggested Structure")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16))
     }
 
-    // MARK: - Writing Input Section
+    // MARK: - Writing Section
 
     private var writingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
 
-            // Re-submit info banner: shown only when re-submitting
+            // Re-submit info banner
             if isResubmitting {
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.counterclockwise.circle.fill")
-                        .foregroundStyle(.purple)
+                        .foregroundStyle(BrandColor.medium)
                         .font(.subheadline)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("New Attempt")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(BrandColor.medium)
                         Text(
                             "You are writing a new attempt. Your previous result is saved in history."
                         )
@@ -280,10 +305,13 @@ struct QuestionDetailView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .glassEffect(
-                    .regular.tint(Color.purple.opacity(0.1)),
+                    .regular.tint(BrandColor.muted),
                     in: .rect(cornerRadius: 12)
                 )
             }
+
+            // Remaining attempts banner
+            usageLimitBanner
 
             // Beta disclaimer banner
             HStack(spacing: 10) {
@@ -312,12 +340,12 @@ struct QuestionDetailView: View {
             // AI grading info banner
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(BrandColor.light)
                     .font(.subheadline)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("AI-Powered Grading")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Text(
                         "Your essay will be automatically graded by Gemini AI based on VSTEP rubrics. Results typically appear within 10–30 seconds."
                     )
@@ -329,11 +357,11 @@ struct QuestionDetailView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassEffect(
-                .regular.tint(Color.blue.opacity(0.08)),
+                .regular.tint(BrandColor.muted),
                 in: .rect(cornerRadius: 12)
             )
 
-            // Header row
+            // Word count header
             HStack {
                 Text("Your Essay")
                     .font(.subheadline.weight(.semibold))
@@ -348,7 +376,7 @@ struct QuestionDetailView: View {
                     .glassEffect(in: .rect(cornerRadius: 8))
             }
 
-            // TextEditor with placeholder
+            // TextEditor
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $essayText)
                     .frame(minHeight: 220)
@@ -368,6 +396,15 @@ struct QuestionDetailView: View {
 
             // Submit button
             Button {
+                let check = AIUsageManager.shared.canGrade(
+                    questionId: question.questionId,
+                    store: store
+                )
+                guard check.isAllowed else {
+                    limitAlertMessage = check.deniedReason ?? "Limit reached."
+                    showLimitAlert = true
+                    return
+                }
                 showSubmitConfirm = true
             } label: {
                 Group {
@@ -396,13 +433,18 @@ struct QuestionDetailView: View {
                         .padding(.vertical, 14)
                     }
                 }
+                .glassEffect(
+                    .regular.tint(
+                        (wordCount < minWords || isSubmitting
+                            || !canSubmitToday)
+                            ? Color.secondary.opacity(0.1)
+                            : BrandColor.primary.opacity(0.15)
+                    ).interactive(),
+                    in: .rect(cornerRadius: 12)
+                )
             }
-            .glassEffect(
-                .regular.tint(taskColor.opacity(0.15)).interactive(),
-                in: .rect(cornerRadius: 12)
-            )
             .tint(.primary)
-            .disabled(wordCount < minWords || isSubmitting)
+            .disabled(wordCount < minWords || isSubmitting || !canSubmitToday)
 
             if wordCount < minWords {
                 Text(
@@ -416,11 +458,83 @@ struct QuestionDetailView: View {
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16))
     }
+
+    // MARK: - Usage Limit Banner
+
+    @ViewBuilder
+    private var usageLimitBanner: some View {
+        let gradingCheck = AIUsageManager.shared.canGrade(
+            questionId: question.questionId,
+            store: store
+        )
+        let submitCheck = AIUsageManager.shared.canSubmit(
+            questionId: question.questionId,
+            store: store
+        )
+
+        if !gradingCheck.isAllowed || !submitCheck.isAllowed {
+            // Blocked: show hard limit message
+            HStack(spacing: 10) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                    .font(.subheadline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Daily Limit Reached")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    Text(
+                        gradingCheck.deniedReason ?? submitCheck.deniedReason
+                            ?? ""
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                NavigationLink {
+                    SubscriptionsView()
+                } label: {
+                    Text("Upgrade")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(BrandColor.primary))
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(
+                .regular.tint(Color.red.opacity(0.08)),
+                in: .rect(cornerRadius: 12)
+            )
+        } else if remainingGrading <= 1 {
+            // Warning: last attempt
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(BrandColor.soft)
+                    .font(.subheadline)
+                Text(
+                    "\(remainingGrading) AI grading attempt\(remainingGrading == 1 ? "" : "s") left for this essay today."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassEffect(
+                .regular.tint(Color.orange.opacity(0.08)),
+                in: .rect(cornerRadius: 12)
+            )
+        }
+    }
 }
 
 // MARK: - Submission Review View
 
 private struct SubmissionReviewView: View {
+
     let question: VSTEPQuestion
     let submission: UserSubmission
     let taskColor: Color
@@ -436,13 +550,12 @@ private struct SubmissionReviewView: View {
                 question: question,
                 questionNumber: 0,
                 latestSubmission: nil,
-                submissionHistory: []
+                submissionHistory: [],
+                store: StoreKitManager()  // Read-only context, no purchase actions
             ).promptSection
             essaySection
         }
     }
-
-    // MARK: - Score + Overall + Criteria + Suggestions
 
     private var latestResultCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -450,10 +563,10 @@ private struct SubmissionReviewView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Text("Graded by Gemini AI")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Spacer()
                     Text("AI Score")
                         .font(.caption2)
@@ -537,17 +650,19 @@ private struct SubmissionReviewView: View {
                             ForEach(
                                 Array(suggestions.enumerated()),
                                 id: \.offset
-                            ) { index, suggestion in
+                            ) {
+                                index,
+                                suggestion in
                                 HStack(alignment: .top, spacing: 12) {
                                     ZStack {
                                         Circle()
-                                            .fill(Color.blue.opacity(0.15))
+                                            .fill(BrandColor.muted)
                                             .frame(width: 24, height: 24)
                                         Text("\(index + 1)")
                                             .font(
                                                 .system(size: 12, weight: .bold)
                                             )
-                                            .foregroundStyle(.blue)
+                                            .foregroundStyle(BrandColor.primary)
                                     }
                                     Text(suggestion.markdownAttributed())
                                         .font(.subheadline)
@@ -583,10 +698,10 @@ private struct SubmissionReviewView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
                         .font(.caption)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Text("Gemini AI is reviewing your essay")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Spacer()
                 }
 
@@ -627,8 +742,6 @@ private struct SubmissionReviewView: View {
         .glassEffect(in: .rect(cornerRadius: 16))
     }
 
-    // MARK: - Essay Section
-
     private var essaySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -642,6 +755,7 @@ private struct SubmissionReviewView: View {
                     .padding(.vertical, 3)
                     .glassEffect(in: .rect(cornerRadius: 8))
             }
+
             Text(submission.content)
                 .font(.body)
                 .foregroundStyle(.primary)
@@ -666,6 +780,7 @@ private struct SubmissionReviewView: View {
 // MARK: - Collapsible Section
 
 private struct CollapsibleSection<Content: View>: View {
+
     let title: String
     let icon: String
     @Binding var isExpanded: Bool
@@ -722,6 +837,7 @@ private struct CollapsibleSection<Content: View>: View {
 // MARK: - Criterion Row
 
 private struct CriterionRow: View {
+
     let criterion: SubmissionCriterion
 
     var body: some View {
@@ -768,10 +884,10 @@ private struct CriterionRow: View {
 // MARK: - Grading History Sheet
 
 struct GradingHistorySheet: View {
+
     let history: [UserSubmission]
     @Environment(\.dismiss) private var dismiss
 
-    // Sort ascending by submittedAt so Attempt #1 is always the oldest submission
     private var sortedHistory: [UserSubmission] {
         history.sorted { $0.submittedAt > $1.submittedAt }
     }
@@ -782,12 +898,12 @@ struct GradingHistorySheet: View {
                 VStack(spacing: 12) {
                     HStack(spacing: 10) {
                         Image(systemName: "sparkles")
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(BrandColor.light)
                             .font(.subheadline)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("AI Grading Process")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(BrandColor.light)
                             Text(
                                 "All attempts are graded automatically by Gemini AI using VSTEP rubrics. Scores are for reference only."
                             )
@@ -799,11 +915,10 @@ struct GradingHistorySheet: View {
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassEffect(
-                        .regular.tint(Color.blue.opacity(0.08)),
+                        .regular.tint(BrandColor.muted),
                         in: .rect(cornerRadius: 16)
                     )
 
-                    // Enumerate sorted ascending so Attempt #1 = oldest, #N = newest
                     ForEach(Array(sortedHistory.enumerated()), id: \.offset) {
                         index,
                         sub in
@@ -824,8 +939,8 @@ struct GradingHistorySheet: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
+                            .foregroundStyle(BrandColor.primary)
                     }
-                    .tint(.red)
                 }
             }
         }
@@ -835,6 +950,7 @@ struct GradingHistorySheet: View {
 // MARK: - History Attempt Card
 
 private struct HistoryAttemptCard: View {
+
     let submission: UserSubmission
     let attemptNumber: Int
 
@@ -851,17 +967,18 @@ private struct HistoryAttemptCard: View {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles")
                         .font(.caption2)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                     Text("AI Graded")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(BrandColor.light)
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
                 .glassEffect(
-                    .regular.tint(Color.blue.opacity(0.1)),
+                    .regular.tint(BrandColor.muted),
                     in: .capsule
                 )
+
                 statusBadge
             }
 
@@ -926,9 +1043,7 @@ private struct HistoryAttemptCard: View {
                 }
             }
 
-            if let suggestions = submission.suggestions,
-                !suggestions.isEmpty
-            {
+            if let suggestions = submission.suggestions, !suggestions.isEmpty {
                 Divider()
                 CollapsibleSection(
                     title: "Suggestions for Improvement",
@@ -937,18 +1052,17 @@ private struct HistoryAttemptCard: View {
                     count: suggestions.count
                 ) {
                     VStack(spacing: 8) {
-                        ForEach(
-                            Array(suggestions.enumerated()),
-                            id: \.offset
-                        ) { index, suggestion in
+                        ForEach(Array(suggestions.enumerated()), id: \.offset) {
+                            index,
+                            suggestion in
                             HStack(alignment: .top, spacing: 12) {
                                 ZStack {
                                     Circle()
-                                        .fill(Color.blue.opacity(0.15))
+                                        .fill(BrandColor.muted)
                                         .frame(width: 24, height: 24)
                                     Text("\(index + 1)")
                                         .font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(.blue)
+                                        .foregroundStyle(BrandColor.primary)
                                 }
                                 Text(suggestion.markdownAttributed())
                                     .font(.subheadline)
@@ -977,8 +1091,8 @@ private struct HistoryAttemptCard: View {
                 Spacer()
                 Text(
                     submission.submittedAt,
-                    format: .dateTime.day().month(.abbreviated).year()
-                        .hour().minute()
+                    format: .dateTime.day().month(.abbreviated).year().hour()
+                        .minute()
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1001,7 +1115,9 @@ private struct HistoryAttemptCard: View {
     private var statusBadge: some View {
         Text(submission.status.displayText)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(submission.score != nil ? .green : .orange)
+            .foregroundStyle(
+                submission.score != nil ? BrandColor.light : .orange
+            )
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .glassEffect(in: .rect(cornerRadius: 6))
@@ -1019,6 +1135,7 @@ private struct HistoryAttemptCard: View {
 // MARK: - Submission Status Tracker
 
 struct SubmissionStatusTracker: View {
+
     let status: SubmissionStatus
 
     private var currentStep: Int {
@@ -1030,6 +1147,7 @@ struct SubmissionStatusTracker: View {
         case .failed: return 2
         }
     }
+
     private var isFailed: Bool { status == .failed }
     private let steps = ["Submitted", "AI Grading", "Done"]
 
@@ -1095,8 +1213,7 @@ struct SubmissionStatusTracker: View {
                 .font(.caption2)
                 .fontWeight(isActive ? .semibold : .regular)
                 .foregroundStyle(
-                    (isActive || isCompleted)
-                        ? .primary : Color(.tertiaryLabel)
+                    (isActive || isCompleted) ? .primary : Color(.tertiaryLabel)
                 )
                 .multilineTextAlignment(.center)
         }
@@ -1104,9 +1221,9 @@ struct SubmissionStatusTracker: View {
     }
 
     private func nodeFill(isActive: Bool, isCompleted: Bool) -> Color {
-        if isCompleted { return .blue.opacity(0.7) }
+        if isCompleted { return BrandColor.light }
         if isActive && isFailed { return .red }
-        if isActive { return .blue }
+        if isActive { return BrandColor.primary }
         return Color(.secondarySystemFill)
     }
 }
@@ -1114,6 +1231,7 @@ struct SubmissionStatusTracker: View {
 // MARK: - Shimmer Connector
 
 struct ShimmerConnector: View {
+
     let filled: Bool
     let animated: Bool
 
@@ -1123,7 +1241,7 @@ struct ShimmerConnector: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(filled ? Color.blue.opacity(0.7) : Color(.systemFill))
+                    .fill(filled ? BrandColor.light : Color(.systemFill))
                     .frame(height: 2)
 
                 if animated {
@@ -1146,17 +1264,17 @@ struct ShimmerConnector: View {
                         .offset(x: phase * geo.size.width)
                 }
             }
-        }
-        .frame(height: 2)
-        .padding(.top, 13)
-        .clipped()
-        .onAppear {
-            guard animated else { return }
-            phase = -0.45
-            withAnimation(
-                .linear(duration: 1.0).repeatForever(autoreverses: false)
-            ) {
-                phase = 1.0
+            .frame(height: 2)
+            .padding(.top, 13)
+            .clipped()
+            .onAppear {
+                guard animated else { return }
+                phase = -0.45
+                withAnimation(
+                    .linear(duration: 1.0).repeatForever(autoreverses: false)
+                ) {
+                    phase = 1.0
+                }
             }
         }
     }

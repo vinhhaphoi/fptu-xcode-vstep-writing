@@ -2,7 +2,9 @@ import SwiftUI
 
 // MARK: - LearnView
 struct LearnView: View {
+
     @StateObject private var firebaseService = FirebaseService.shared
+    @Environment(StoreKitManager.self) private var store
     @State private var submittedIds: Set<String> = []
     @State private var latestSubmissions: [String: UserSubmission] = [:]
     @State private var allSubmissions: [String: [UserSubmission]] = [:]
@@ -34,8 +36,77 @@ struct LearnView: View {
                 || $0.difficulty.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
+
+    // MARK: - Body
+
+    var body: some View {
+        Group {
+            if firebaseService.isLoading && firebaseService.questions.isEmpty {
+                LearnLoadingView()
+            } else if firebaseService.questions.isEmpty {
+                LearnEmptyView { Task { await loadData() } }
+            } else {
+                mainContent
+            }
+        }
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearchPresented,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search questions..."
+        )
+        .navigationTitle("Learn")
+        .toolbarTitleDisplayMode(.large)
+        .background(Color(.systemGroupedBackground))
+        .refreshable { await loadData() }
+        .task { await loadData() }
+        .alert("Error", isPresented: $showError) {
+            Button("OK") {}
+        } message: {
+            Text(errorMsg)
+        }
+        .onDisappear {
+            firebaseService.stopAllListeners()
+        }
+    }
+
+    // MARK: - Main Content
+
+    private var mainContent: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                if !searchText.isEmpty {
+                    searchContent
+                } else {
+                    RankFilterRow(
+                        ranks: VSTEPRank.allRanks,
+                        selectedID: $selectedRankID
+                    )
+
+                    ForEach(displayedRanks) { rank in
+                        RankSection(
+                            rank: rank,
+                            task1Questions: task1Questions,
+                            task2Questions: task2Questions,
+                            submittedIds: submittedIds,
+                            latestSubmissions: latestSubmissions,
+                            allSubmissions: allSubmissions,
+                            store: store,
+                            onSubmit: handleSubmit,
+                            onRefresh: loadData
+                        )
+                    }
+
+                    Spacer(minLength: 40)
+                }
+            }
+            .padding(.vertical)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
     // MARK: - Search Content
+
     private var searchContent: some View {
         Group {
             if searchResults.isEmpty {
@@ -73,72 +144,20 @@ struct LearnView: View {
         .padding(.horizontal)
     }
 
-
-    var body: some View {
-        Group {
-            if firebaseService.isLoading && firebaseService.questions.isEmpty {
-                LearnLoadingView()
-            } else if firebaseService.questions.isEmpty {
-                LearnEmptyView { Task { await loadData() } }
-            } else {
-                mainContent
-            }
-        }
-        .searchable(
-            text: $searchText,
-            isPresented: $isSearchPresented,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Search questions..."
-        )
-        .navigationTitle("Learn")
-        .toolbarTitleDisplayMode(.large)
-        .background(Color(.systemGroupedBackground))
-        .refreshable { await loadData() }
-        .task { await loadData() }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") {}
-        } message: {
-            Text(errorMsg)
-        }
-        .onDisappear {
-            firebaseService.stopAllListeners()
-        }
-    }
-
-    // MARK: - Main Content
-    private var mainContent: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 20) {
-                // Switch giua search results va normal content
-                if !searchText.isEmpty {
-                    searchContent
-                } else {
-                    RankFilterRow(
-                        ranks: VSTEPRank.allRanks,
-                        selectedID: $selectedRankID
-                    )
-                    ForEach(displayedRanks) { rank in
-                        RankSection(
-                            rank: rank,
-                            task1Questions: task1Questions,
-                            task2Questions: task2Questions,
-                            submittedIds: submittedIds,
-                            latestSubmissions: latestSubmissions,
-                            allSubmissions: allSubmissions,
-                            onSubmit: handleSubmit,
-                            onRefresh: loadData
-                        )
-                    }
-                }
-                Spacer(minLength: 40)
-            }
-            .padding(.vertical)
-        }
-        .background(Color(.systemGroupedBackground))
-    }
-
     // MARK: - Submit Handler
+
     private func handleSubmit(question: VSTEPQuestion, essayText: String) {
+        // Check submission limit before proceeding
+        let submitCheck = AIUsageManager.shared.canSubmit(
+            questionId: question.questionId,
+            store: store
+        )
+        guard submitCheck.isAllowed else {
+            errorMsg = submitCheck.deniedReason ?? "Submission limit reached."
+            showError = true
+            return
+        }
+
         let wordCount =
             essayText
             .split(separator: " ")
@@ -155,7 +174,7 @@ struct LearnView: View {
             status: .submitted
         )
 
-        // Optimistic update — hien thi ngay tren UI truoc khi Firestore confirm
+        // Optimistic update — show immediately before Firestore confirms
         latestSubmissions[question.questionId] = newSubmission
         allSubmissions[question.questionId, default: []].insert(
             newSubmission,
@@ -166,6 +185,11 @@ struct LearnView: View {
         Task { [firebaseService] in
             do {
                 let docId = try await firebaseService.submitEssay(newSubmission)
+
+                // Record usage after successful submission
+                await AIUsageManager.shared.recordSubmission(
+                    questionId: question.questionId
+                )
 
                 firebaseService.listenForGradingResult(
                     submissionId: docId,
@@ -216,6 +240,7 @@ struct LearnView: View {
     }
 
     // MARK: - Data Loading
+
     private func loadData() async {
         do {
             try await firebaseService.fetchQuestions()
@@ -251,6 +276,7 @@ struct LearnView: View {
     }
 
     // MARK: - Local Cache Helpers
+
     private func saveLocalCache() {
         guard let userId = firebaseService.currentUserId else { return }
         let key = "\(cacheKey)_\(userId)"
@@ -263,7 +289,8 @@ struct LearnView: View {
     private func loadLocalCache() -> [String: UserSubmission] {
         guard let userId = firebaseService.currentUserId else { return [:] }
         let key = "\(cacheKey)_\(userId)"
-        guard let data = UserDefaults.standard.data(forKey: key),
+        guard
+            let data = UserDefaults.standard.data(forKey: key),
             let decoded = try? JSONDecoder().decode(
                 [String: UserSubmission].self,
                 from: data
@@ -274,7 +301,9 @@ struct LearnView: View {
 }
 
 // MARK: - Rank Filter Row
+
 struct RankFilterRow: View {
+
     let ranks: [VSTEPRank]
     @Binding var selectedID: String?
 
@@ -302,7 +331,6 @@ struct RankFilterRow: View {
                             .padding(.vertical, 8)
                             .glassEffect(
                                 .regular.tint(
-                                    // Updated: BrandColor.primary replaces .blue for "All" selected state
                                     selectedID == nil
                                         ? BrandColor.primary : .clear
                                 ).interactive(),
@@ -321,7 +349,6 @@ struct RankFilterRow: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
                                 .glassEffect(
-                                    // Rank colors (blue/purple/red) are classification colors, kept as-is
                                     .regular.tint(
                                         selectedID == rank.id
                                             ? rank.color : .clear
@@ -334,20 +361,22 @@ struct RankFilterRow: View {
                 }
                 .padding(.horizontal)
             }
-            .background(Color(.systemGroupedBackground))
         }
         .background(Color(.systemGroupedBackground))
     }
 }
 
 // MARK: - Rank Section
+
 struct RankSection: View {
+
     let rank: VSTEPRank
     let task1Questions: [VSTEPQuestion]
     let task2Questions: [VSTEPQuestion]
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
+    let store: StoreKitManager  // Added: for usage limit display
     var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
     var onRefresh: (() async -> Void)? = nil
 
@@ -360,6 +389,7 @@ struct RankSection: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("VSTEP \(rank.cefr)")
                     .font(.headline)
+                    .foregroundStyle(BrandColor.primary)
                 Text(rank.displayName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -382,6 +412,7 @@ struct RankSection: View {
                             submittedIds: submittedIds,
                             latestSubmissions: latestSubmissions,
                             allSubmissions: allSubmissions,
+                            store: store,
                             onSubmit: onSubmit,
                             onRefresh: onRefresh
                         )
@@ -435,12 +466,15 @@ struct RankSection: View {
 }
 
 // MARK: - Task Question List
+
 struct TaskQuestionListView: View {
+
     let title: String
     let questions: [VSTEPQuestion]
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
+    let store: StoreKitManager  // Added: passed down for usage checks
     var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
     var onRefresh: (() async -> Void)? = nil
 
@@ -466,15 +500,17 @@ struct TaskQuestionListView: View {
                             isCompleted: submittedIds.contains(
                                 question.questionId
                             ),
+                            store: store,
                             onSubmit: { essayText in
                                 onSubmit?(question, essayText)
                             },
                             onRefresh: onRefresh
                         )
-                        .glassEffect()
-                        .padding(.horizontal)
                     }
+                    .glassEffect()
+                    .padding(.horizontal)
                 }
+
                 Spacer(minLength: 60)
             }
             .padding(.top, 16)
@@ -508,14 +544,24 @@ struct TaskQuestionListView: View {
 }
 
 // MARK: - Question Row
+
 private struct QuestionRow: View {
+
     let number: Int
     let question: VSTEPQuestion
     let latestSubmission: UserSubmission?
     let submissionHistory: [UserSubmission]
     let isCompleted: Bool
+    let store: StoreKitManager  // Added: for remaining attempts display
     var onSubmit: ((String) -> Void)? = nil
     var onRefresh: (() async -> Void)? = nil
+
+    private var remainingAttempts: Int {
+        AIUsageManager.shared.remainingGrading(
+            for: question.questionId,
+            store: store
+        )
+    }
 
     var body: some View {
         NavigationLink(
@@ -524,6 +570,7 @@ private struct QuestionRow: View {
                 questionNumber: number,
                 latestSubmission: isCompleted ? latestSubmission : nil,
                 submissionHistory: isCompleted ? submissionHistory : [],
+                store: store,
                 onSubmit: onSubmit,
                 onRefresh: onRefresh
             )
@@ -532,7 +579,7 @@ private struct QuestionRow: View {
                 Text(String(format: "%02d", number))
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(
-                        isCompleted ? .green : Color(.tertiaryLabel)
+                        isCompleted ? BrandColor.light : Color(.tertiaryLabel)
                     )
                     .frame(width: 40)
 
@@ -589,6 +636,22 @@ private struct QuestionRow: View {
                         .foregroundStyle(.orange)
                 }
             }
+        } else {
+            // Show remaining AI grading attempts for unstarted questions
+            if remainingAttempts > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "sparkles")
+                        .font(.caption2)
+                        .foregroundStyle(BrandColor.soft)
+                    Text("\(remainingAttempts) left")
+                        .font(.caption2)
+                        .foregroundStyle(BrandColor.medium)
+                }
+            } else {
+                Text("Limit reached")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -602,6 +665,7 @@ private struct QuestionRow: View {
 }
 
 // MARK: - Loading View
+
 struct LearnLoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -616,7 +680,9 @@ struct LearnLoadingView: View {
 }
 
 // MARK: - Empty View
+
 struct LearnEmptyView: View {
+
     let onReload: () -> Void
 
     var body: some View {
@@ -628,7 +694,6 @@ struct LearnEmptyView: View {
                 .foregroundStyle(.secondary)
             Button("Reload", action: onReload)
                 .buttonStyle(.bordered)
-                // Updated: BrandColor.primary replaces default system blue
                 .tint(BrandColor.primary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -637,6 +702,7 @@ struct LearnEmptyView: View {
 }
 
 // MARK: - VSTEP Rank Model
+
 struct VSTEPRank: Identifiable {
     let id: String
     let cefr: String

@@ -11,6 +11,7 @@ struct NotificationView: View {
     @State private var notifications: [AppNotification] = []
     @State private var isLoading = false
     @State private var showDeleteConfirm = false
+    @Environment(StoreKitManager.self) private var store
 
     #if DEBUG
         @State private var showTestToast = false
@@ -352,7 +353,6 @@ struct NotificationView: View {
     }
 }
 
-
 // MARK: - NotificationRow
 struct NotificationRow: View {
     let item: AppNotification
@@ -441,10 +441,12 @@ struct NotificationRow: View {
 
 // MARK: - SearchResultRow
 struct SearchResultRow: View {
+
     let question: VSTEPQuestion
+    @Environment(StoreKitManager.self) private var store  // Them dong nay
 
     private var taskColor: Color {
-        question.taskType == "task1" ? .blue : .purple
+        question.taskType == "task1" ? BrandColor.light : BrandColor.medium
     }
 
     private var taskIcon: String {
@@ -466,7 +468,8 @@ struct SearchResultRow: View {
                 question: question,
                 questionNumber: 0,
                 latestSubmission: nil,
-                submissionHistory: []
+                submissionHistory: [],
+                store: store  // Them dong nay
             )
         ) {
             HStack(spacing: 14) {
@@ -506,4 +509,3 @@ struct SearchResultRow: View {
         .buttonStyle(.plain)
     }
 }
-
