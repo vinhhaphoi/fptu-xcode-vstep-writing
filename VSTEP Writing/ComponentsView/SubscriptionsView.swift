@@ -230,19 +230,20 @@ struct SubscriptionsView: View {
             // Benefits Section
             if let benefits = plan?.benefits {
                 VStack(spacing: 0) {
+                    // Updated: explain daily AI grading quota clearly
+                    let maxEssays = limits?.maxEssaysPerDay ?? 1
+                    let gradingAttempts = limits?.gradingAttemptsPerEssay ?? 1
+                    let submissions = limits?.submissionsPerEssayPerDay ?? 1
+                    let isUnlimitedEssays = maxEssays == Int.max
+
                     benefitRow(
-                        icon: "infinity",
-                        title: "Unlimited Essay Submissions",
+                        icon: "doc.text.magnifyingglass",
+                        title: isUnlimitedEssays
+                            ? "Unlimited essays graded by AI today"
+                            : "\(maxEssays) essay\(maxEssays > 1 ? "s" : "") graded by AI today",
                         subtitle:
-                            "\(limits?.submissionsPerEssayPerDay ?? 1) submissions/essay · \(limits?.maxEssaysPerDay ?? 1) essays/day",
+                            "Up to \(gradingAttempts) AI attempt\(gradingAttempts > 1 ? "s" : "") · \(submissions) submission\(submissions > 1 ? "s" : "")/essay — unused quota resets tomorrow",
                         enabled: benefits.unlimitedTests
-                    )
-                    benefitRow(
-                        icon: "brain.head.profile",
-                        title: "AI Essay Grading",
-                        subtitle:
-                            "\(limits?.gradingAttemptsPerEssay ?? 1) AI attempts/essay per day",
-                        enabled: benefits.aiGrammarCheck
                     )
                     benefitRow(
                         icon: "bubble.left.and.bubble.right.fill",
@@ -251,26 +252,22 @@ struct SubscriptionsView: View {
                             "\(limits?.chatbotQuestionsPerDay ?? 0) questions/day",
                         enabled: benefits.aiGrammarCheck
                     )
+                    // Advanced Analytics: no longer comingSoon, shows weekly insight limit
                     benefitRow(
                         icon: "chart.bar.fill",
                         title: "Advanced Analytics",
-                        subtitle: nil,
-                        enabled: benefits.detailedAnalytics,
-                        badge: .comingSoon
+                        subtitle: limits.map {
+                            "\($0.insightRefreshesPerWeek) AI insight refresh\($0.insightRefreshesPerWeek > 1 ? "es" : "")/week"
+                        },
+                        enabled: benefits.detailedAnalytics
                     )
                     benefitRow(
                         icon: "star.fill",
                         title: "Priority Support",
                         subtitle: nil,
                         enabled: benefits.prioritySupport,
-                        badge: .comingSoon
-                    )
-                    benefitRow(
-                        icon: "xmark.circle.fill",
-                        title: "Remove Ads",
-                        subtitle: nil,
-                        enabled: benefits.adsRemoved,
-                        isLast: true
+                        badge: .comingSoon,
+                        isLast: true  // Remove Ads removed — this is now last
                     )
                 }
             } else {
@@ -286,7 +283,8 @@ struct SubscriptionsView: View {
         HStack(spacing: 0) {
             limitBadge(
                 icon: "doc.text.fill",
-                value: "\(limits.maxEssaysPerDay)",
+                value: limits.maxEssaysPerDay == Int.max
+                    ? "∞" : "\(limits.maxEssaysPerDay)",
                 label: "Essays/day"
             )
 
@@ -295,7 +293,8 @@ struct SubscriptionsView: View {
 
             limitBadge(
                 icon: "brain.head.profile",
-                value: "\(limits.gradingAttemptsPerEssay)x",
+                value: limits.gradingAttemptsPerEssay == Int.max
+                    ? "∞" : "\(limits.gradingAttemptsPerEssay)x",
                 label: "AI Grading"
             )
 

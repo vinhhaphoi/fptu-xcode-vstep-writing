@@ -520,3 +520,96 @@ struct AnalyzeProgressResponse: Codable {
     let weeklyLimit: Int?
     let weekKey: String?
 }
+
+// MARK: - VSTEP Rank Model
+
+struct VSTEPRank: Identifiable {
+    let id: String
+    let cefr: String
+    let displayName: String
+    let color: Color
+    let difficulties: [String]
+    let taskCategories: [TaskCategory]
+
+    struct TaskCategory {
+        let title: String
+        let subtitle: String
+        let icon: String
+        let color: Color
+        let taskType: String
+    }
+}
+
+extension VSTEPRank {
+    static let allRanks: [VSTEPRank] = [
+        VSTEPRank(
+            id: "b1",
+            cefr: "B1",
+            displayName: "Pre-Intermediate",
+            color: .blue,
+            difficulties: ["easy"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Visual Description",
+                    subtitle: "Describe a chart, graph or table",
+                    icon: "chart.bar",
+                    color: .blue,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Opinion Essay",
+                    subtitle: "Give your opinion on a familiar topic",
+                    icon: "text.bubble",
+                    color: .indigo,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+        VSTEPRank(
+            id: "b2",
+            cefr: "B2",
+            displayName: "Upper-Intermediate",
+            color: .purple,
+            difficulties: ["medium"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Data Analysis",
+                    subtitle: "Analyse trends and compare data",
+                    icon: "chart.line.uptrend.xyaxis",
+                    color: .purple,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Argumentative Essay",
+                    subtitle: "Argue both sides of a complex issue",
+                    icon: "text.book.closed",
+                    color: .orange,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+        VSTEPRank(
+            id: "c1",
+            cefr: "C1",
+            displayName: "Advanced",
+            color: .red,
+            difficulties: ["hard"],
+            taskCategories: [
+                TaskCategory(
+                    title: "Task 1 - Complex Visuals",
+                    subtitle: "Synthesise data from multiple charts",
+                    icon: "chart.pie",
+                    color: .red,
+                    taskType: "task1"
+                ),
+                TaskCategory(
+                    title: "Task 2 - Critical Essay",
+                    subtitle: "Evaluate ideas with advanced vocabulary",
+                    icon: "doc.richtext",
+                    color: .pink,
+                    taskType: "task2"
+                ),
+            ]
+        ),
+    ]
+}
