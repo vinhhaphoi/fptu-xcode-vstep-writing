@@ -771,6 +771,11 @@ struct GradingHistorySheet: View {
     let history: [UserSubmission]
     @Environment(\.dismiss) private var dismiss
 
+    // Sort ascending by submittedAt so Attempt #1 is always the oldest submission
+    private var sortedHistory: [UserSubmission] {
+        history.sorted { $0.submittedAt > $1.submittedAt }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -798,12 +803,13 @@ struct GradingHistorySheet: View {
                         in: .rect(cornerRadius: 16)
                     )
 
-                    ForEach(Array(history.enumerated()), id: \.offset) {
+                    // Enumerate sorted ascending so Attempt #1 = oldest, #N = newest
+                    ForEach(Array(sortedHistory.enumerated()), id: \.offset) {
                         index,
                         sub in
                         HistoryAttemptCard(
                             submission: sub,
-                            attemptNumber: index + 1
+                            attemptNumber: sortedHistory.count - index
                         )
                     }
                 }

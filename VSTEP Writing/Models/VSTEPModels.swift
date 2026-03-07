@@ -354,3 +354,139 @@ struct ChatSession: Codable, Identifiable {
     var updatedAt: Date
     var messages: [ChatMessageRecord]
 }
+
+// ─────────────────────────────────────────────
+// MARK: - Markdown Renderer Models
+// ─────────────────────────────────────────────
+
+// Represents a parsed block-level markdown element
+enum MarkdownBlock {
+    case paragraph(String)
+    case numberedItem(Int, String)
+    case bulletItem(String, Int)
+    case spacer
+}
+
+// Parses raw markdown string into structured MarkdownBlock array
+struct MarkdownParser {
+
+    static func parse(_ content: String) -> [MarkdownBlock] {
+        let lines = content.components(separatedBy: "\n")
+        var blocks: [MarkdownBlock] = []
+        var numberedCounter = 0
+        var lastWasContent = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Empty line produces a spacer between content blocks
+            if trimmed.isEmpty {
+                if lastWasContent {
+                    blocks.append(.spacer)
+                    lastWasContent = false
+                }
+                continue
+            }
+
+            // Numbered list: matches "1. text" or "1.  text"
+            if let match = trimmed.firstMatch(of: /^(\d+)\.\s+(.+)$/) {
+                numberedCounter = Int(match.1) ?? (numberedCounter + 1)
+                blocks.append(.numberedItem(numberedCounter, String(match.2)))
+                lastWasContent = true
+                continue
+            }
+
+            // Bullet list with indentation level derived from leading spaces
+            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+            let level = leadingSpaces / 4
+
+            if trimmed.hasPrefix("* ") || trimmed.hasPrefix("- ") {
+                let text = String(trimmed.dropFirst(2))
+                blocks.append(.bulletItem(text, level))
+                lastWasContent = true
+                numberedCounter = 0
+                continue
+            }
+
+            // Regular paragraph
+            numberedCounter = 0
+            blocks.append(.paragraph(trimmed))
+            lastWasContent = true
+        }
+
+        return blocks
+    }
+}
+
+// ─────────────────────────────────────────────
+// MARK: - MarkdownView
+// ─────────────────────────────────────────────
+
+// Renders parsed markdown blocks with proper indentation and spacing
+struct MarkdownView: View {
+
+    let content: String
+    let textColor: Color
+
+    private var blocks: [MarkdownBlock] { MarkdownParser.parse(content) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .paragraph(let text):
+            Text(inlineMarkdown(text))
+                .font(.body)
+                .foregroundColor(textColor)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 2)
+
+        case .numberedItem(let index, let text):
+            HStack(alignment: .top, spacing: 6) {
+                Text("\(index).")
+                    .font(.body.monospacedDigit())
+                    .foregroundColor(textColor)
+                    .frame(minWidth: 24, alignment: .trailing)
+                Text(inlineMarkdown(text))
+                    .font(.body)
+                    .foregroundColor(textColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 4)
+
+        case .bulletItem(let text, let level):
+            HStack(alignment: .top, spacing: 8) {
+                Text(level == 0 ? "•" : "◦")
+                    .font(.body)
+                    .foregroundColor(textColor.opacity(0.7))
+                    .frame(width: 12, alignment: .center)
+                Text(inlineMarkdown(text))
+                    .font(.body)
+                    .foregroundColor(textColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, CGFloat(level) * 16 + 4)
+
+        case .spacer:
+            Spacer().frame(height: 4)
+        }
+    }
+
+    // Converts inline markdown to AttributedString for bold/italic rendering
+    private func inlineMarkdown(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full
+        )
+        return (try? AttributedString(markdown: text, options: options))
+            ?? AttributedString(text)
+    }
+}

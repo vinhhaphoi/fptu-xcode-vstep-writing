@@ -141,12 +141,55 @@ final class ChatViewModel: ObservableObject {
     func dismissError() {
         errorMessage = nil
     }
+
+    // Starts a brand new session without deleting existing history
+    func startNewSession() {
+        Task {
+            currentSessionId = nil
+            messages.removeAll()
+            isTyping = false
+            errorMessage = nil
+
+            do {
+                currentSessionId = try await service.createChatSession()
+                messages = [makeWelcomeMessage()]
+            } catch {
+                messages = [makeWelcomeMessage()]
+                print(
+                    "[ChatViewModel] Failed to create new session: \(error.localizedDescription)"
+                )
+            }
+        }
+    }
+
+    // Deletes all sessions from Firestore and dismisses the sheet
+    func deleteAllSessions(dismiss: DismissAction) async {
+        do {
+            let allSessions = try await service.fetchAllChatSessions()
+            for session in allSessions {
+                guard let sessionId = session.id else { continue }
+                try? await service.deleteChatSession(sessionId: sessionId)
+            }
+            sessions.removeAll()
+            // Start fresh after deleting everything
+            currentSessionId = nil
+            messages = [makeWelcomeMessage()]
+            currentSessionId = try? await service.createChatSession()
+        } catch {
+            print(
+                "[ChatViewModel] Failed to delete all sessions: \(error.localizedDescription)"
+            )
+        }
+        dismiss()
+    }
+
 }
 
 // ─────────────────────────────────────────────
 // MARK: - MessageBubbleView
 // ─────────────────────────────────────────────
 
+// Displays a single chat bubble with Markdown rendering for AI responses
 // Displays a single chat bubble with Markdown rendering for AI responses
 struct MessageBubbleView: View {
 
@@ -161,7 +204,7 @@ struct MessageBubbleView: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 60) }
-            if !isUser { assistantAvatar }
+            if !isUser { assistantAvatar }  // Now defined in this struct
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                 bubbleContent
@@ -181,7 +224,6 @@ struct MessageBubbleView: View {
         .padding(.vertical, 2)
     }
 
-    // Renders AI Markdown response with proper paragraph line breaks
     @ViewBuilder
     private var bubbleContent: some View {
         if isUser {
@@ -189,30 +231,11 @@ struct MessageBubbleView: View {
                 .font(.body)
                 .foregroundColor(textColor)
         } else {
-            let paragraphs = message.content
-                .components(separatedBy: "\n")
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(paragraphs.enumerated()), id: \.offset) {
-                    _,
-                    paragraph in
-                    if let attributed = try? AttributedString(
-                        markdown: paragraph
-                    ) {
-                        Text(attributed)
-                            .font(.body)
-                            .foregroundColor(textColor)
-                    } else {
-                        Text(paragraph)
-                            .font(.body)
-                            .foregroundColor(textColor)
-                    }
-                }
-            }
+            MarkdownView(content: message.content, textColor: textColor)
         }
     }
 
+    // Avatar displayed next to AI messages — also used in TypingIndicatorView
     private var assistantAvatar: some View {
         ZStack {
             Circle()
@@ -395,11 +418,12 @@ struct ChatInputView: View {
 // MARK: - ChatHistoryView
 // ─────────────────────────────────────────────
 
-// Sheet displaying all previous chat sessions for selection or deletion
+// Sheet with two tabs: history list and new conversation action
 struct ChatHistoryView: View {
 
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showDeleteAllConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -412,28 +436,57 @@ struct ChatHistoryView: View {
             }
             .navigationTitle("Chat History")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
+            .toolbar { toolbarContent }
             .background(Color(.systemGroupedBackground))
+            .confirmationDialog(
+                "Delete all conversations?",
+                isPresented: $showDeleteAllConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete All", role: .destructive) {
+                    Task { await viewModel.deleteAllSessions(dismiss: dismiss) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This will permanently delete all chat history.")
+            }
         }
-        // Bring X button closer to title by hiding the drag indicator
         .presentationDragIndicator(.hidden)
         .task { await viewModel.fetchSessions() }
     }
 
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        // Close sheet on the left
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+            }
+        }
+
+        // Delete all on the right — only visible when sessions exist
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if !viewModel.sessions.isEmpty {
+                Button {
+                    showDeleteAllConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
+                }
+            }
+        }
+    }
+
     private var emptySessions: some View {
         VStack(spacing: 12) {
+            Spacer()
+
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 48))
+                .font(.system(size: 52))
                 .foregroundColor(.secondary)
 
             Text("No History Yet")
@@ -443,50 +496,87 @@ struct ChatHistoryView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+
+            Spacer()
         }
-        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var sessionList: some View {
-        List {
-            ForEach(viewModel.sessions) { session in
-                Button {
-                    viewModel.loadSession(session)
-                    dismiss()
-                } label: {
-                    sessionRow(session)
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(viewModel.sessions) { session in
+                    Button {
+                        viewModel.loadSession(session)
+                        dismiss()
+                    } label: {
+                        sessionRow(session)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            Task {
+                                if let index = viewModel.sessions.firstIndex(
+                                    where: { $0.id == session.id })
+                                {
+                                    await viewModel.deleteSessions(
+                                        at: IndexSet(integer: index)
+                                    )
+                                }
+                            }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
-                .listRowBackground(Color(.secondarySystemBackground))
             }
-            .onDelete { indexSet in
-                Task { await viewModel.deleteSessions(at: indexSet) }
-            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
     }
 
-    // Session row: shows last message sender + content + exact timestamp
+    // Reusable new conversation button
+    private var newConversationButton: some View {
+        Button {
+            viewModel.startNewSession()
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.bubble.fill")
+                Text("New Conversation")
+                    .fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.accentColor)
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: Color.accentColor.opacity(0.3), radius: 8, y: 4)
+        }
+    }
+
+    // Session row: last message sender + preview + exact timestamp
     private func sessionRow(_ session: ChatSession) -> some View {
         let lastMessage = session.messages.last
         let senderLabel = lastMessage?.role == "user" ? "You" : "Assistant"
         let preview = lastMessage?.content ?? "New conversation"
-        let lastDate = lastMessage.map { $0.timestamp } ?? session.updatedAt
+        let lastDate = lastMessage?.timestamp ?? session.updatedAt
 
-        return VStack(alignment: .leading, spacing: 6) {
-            // Last message content preview with sender prefix
+        return VStack(alignment: .leading, spacing: 8) {
             Text("\(senderLabel): \(preview)")
                 .font(.subheadline)
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
                 .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Exact date and time of last message
             Text(lastDate, format: .dateTime.day().month().hour().minute())
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(in: .rect(cornerRadius: 16))
     }
 }

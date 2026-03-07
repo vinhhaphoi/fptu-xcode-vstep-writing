@@ -5,9 +5,8 @@ struct ChatView: View {
 
     @StateObject private var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
-
-    // Controls the delete history confirmation alert
-    @State private var showClearConfirmation = false
+    @Environment(\.dismiss) var dismiss
+    @State private var showDeleteAllConfirmation = false
 
     @State private var showHistory = false
 
@@ -41,19 +40,6 @@ struct ChatView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: viewModel.errorMessage)
-        // Confirmation alert before clearing chat history
-        .confirmationDialog(
-            "Start a new conversation?",
-            isPresented: $showClearConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete History", role: .destructive) {
-                viewModel.clearSession()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently delete the current conversation.")
-        }
     }
 
     // Scrollable message list with auto-scroll and interactive keyboard dismiss
@@ -137,9 +123,9 @@ struct ChatView: View {
         .padding(.top, 8)
     }
 
-    // Toolbar: compose button triggers confirmation dialog before clearing
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        // History button on the left
         ToolbarItem(placement: .navigationBarLeading) {
             Button {
                 showHistory = true
@@ -152,13 +138,10 @@ struct ChatView: View {
             }
         }
 
+        // New conversation button on the right
         ToolbarItem(placement: .navigationBarTrailing) {
             Button {
-                if viewModel.messages.count > 1 {
-                    showClearConfirmation = true
-                } else {
-                    viewModel.clearSession()
-                }
+                viewModel.startNewSession()  // Always save + open new, never delete
             } label: {
                 Image(systemName: "square.and.pencil")
                     .fontWeight(.medium)
