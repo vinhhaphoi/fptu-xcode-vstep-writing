@@ -9,17 +9,20 @@ class AIUsageManager {
 
     // MARK: - State
     var dailyUsage: DailyUsage = .empty
+    var weeklyInsightUsage: WeeklyInsightUsage = .empty
     var planLimits: [String: PlanLimits] = [:]
     var isLoading: Bool = false
 
     private init() {}
 
-    // MARK: - Load Initial Data (call on app start)
+    // MARK: - Load Initial Data
     func loadInitialData() async {
         async let usageTask: () = loadTodayUsage()
         async let limitsTask: () = loadPlanLimits()
+        async let weeklyTask: () = loadWeeklyInsightUsage()
         await usageTask
         await limitsTask
+        await weeklyTask
     }
 
     // MARK: - Load Plan Limits from Firebase
@@ -47,8 +50,20 @@ class AIUsageManager {
         isLoading = false
     }
 
+    // MARK: - Load Weekly Insight Usage
+    func loadWeeklyInsightUsage() async {
+        do {
+            let usage = try await FirebaseService.shared
+                .fetchWeeklyInsightUsage()
+            await MainActor.run { weeklyInsightUsage = usage }
+        } catch {
+            print(
+                "[AIUsageManager] Load weekly insight error: \(error.localizedDescription)"
+            )
+        }
+    }
+
     // MARK: - Resolve Limits
-    // Always reads from Firebase first, falls back to hardcoded defaults
     func limits(for store: StoreKitManager) -> PlanLimits {
         if store.isPurchased("com.vstep.premier") {
             return planLimits["com.vstep.premier"] ?? .premierFallback
@@ -100,7 +115,6 @@ class AIUsageManager {
             )
         }
 
-        // Free tier: also guard total unique essays submitted
         if !store.isPurchased("com.vstep.advanced")
             && !store.isPurchased("com.vstep.premier")
         {
@@ -136,7 +150,35 @@ class AIUsageManager {
         return .allowed
     }
 
-    // MARK: - Record Actions (call after successful operation)
+    // MARK: - Check Insight Refresh (weekly quota)
+    func canRefreshInsights(store: StoreKitManager) -> UsageCheckResult {
+        let limits = limits(for: store)
+
+        // Free tier: no access
+        if limits.insightRefreshesPerWeek == 0 {
+            return .denied(
+                reason: "AI Insights require Advanced or Premier subscription."
+            )
+        }
+
+        // Reset count if new week
+        let currentWeek = Self.isoWeekKey()
+        let effectiveUsed =
+            weeklyInsightUsage.weekKey == currentWeek
+            ? weeklyInsightUsage.usedCount
+            : 0
+
+        if effectiveUsed >= limits.insightRefreshesPerWeek {
+            return .denied(
+                reason:
+                    "Weekly limit of \(limits.insightRefreshesPerWeek) insight refreshes reached. Resets Monday."
+            )
+        }
+        return .allowed
+    }
+
+    // MARK: - Record Actions
+
     func recordGrading(questionId: String) async {
         do {
             try await FirebaseService.shared.incrementGradingAttempt(
@@ -174,7 +216,23 @@ class AIUsageManager {
         }
     }
 
-    // MARK: - Remaining Helpers (for UI display)
+    // Called after Gemini successfully returns fresh insights
+    func recordInsightRefresh() async {
+        do {
+            let currentWeek = Self.isoWeekKey()
+            try await FirebaseService.shared.incrementInsightRefresh(
+                weekKey: currentWeek
+            )
+            await loadWeeklyInsightUsage()
+        } catch {
+            print(
+                "[AIUsageManager] Record insight refresh error: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    // MARK: - Remaining Helpers
+
     func remainingGrading(for questionId: String, store: StoreKitManager) -> Int
     {
         let used = dailyUsage.gradingAttemptsPerEssay[questionId] ?? 0
@@ -195,5 +253,23 @@ class AIUsageManager {
             limits(for: store).maxEssaysPerDay
                 - dailyUsage.totalEssaysGradedToday
         )
+    }
+
+    func remainingInsightRefreshes(store: StoreKitManager) -> Int {
+        let limit = limits(for: store).insightRefreshesPerWeek
+        let currentWeek = Self.isoWeekKey()
+        let used =
+            weeklyInsightUsage.weekKey == currentWeek
+            ? weeklyInsightUsage.usedCount
+            : 0
+        return max(0, limit - used)
+    }
+
+    // MARK: - ISO Week Key Helper
+    static func isoWeekKey(from date: Date = .now) -> String {
+        let cal = Calendar(identifier: .iso8601)
+        let week = cal.component(.weekOfYear, from: date)
+        let year = cal.component(.yearForWeekOfYear, from: date)
+        return String(format: "%04d-W%02d", year, week)
     }
 }

@@ -35,7 +35,6 @@ struct VSTEPQuestion: Identifiable, Codable {
     var tags: [String]
     let suggestedStructure: [String]?
 
-    // Computed from taskType - Firestore does not store these
     var isTask1: Bool { taskType == "task1" }
     var isTask2: Bool { taskType == "task2" }
     var minWords: Int { isTask1 ? 120 : 250 }
@@ -45,7 +44,6 @@ struct VSTEPQuestion: Identifiable, Codable {
         case questionId, taskType, category, title, situation
         case task, topic, instruction, requirements, formalityLevel, essayType
         case difficulty, tags, suggestedStructure
-        // minWords and timeLimit excluded - they are computed, not stored
     }
 }
 
@@ -149,7 +147,6 @@ struct PlanBenefits: Codable {
     let prioritySupport: Bool
     let adsRemoved: Bool
 
-    // Safe decode - fallback when Firebase field is missing
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         unlimitedTests =
@@ -175,59 +172,68 @@ struct PlanBenefits: Codable {
 
 // MARK: - Plan Limits
 struct PlanLimits: Codable {
-    let gradingAttemptsPerEssay: Int
     let maxEssaysPerDay: Int
-    let chatbotQuestionsPerDay: Int
+    let gradingAttemptsPerEssay: Int
     let submissionsPerEssayPerDay: Int
+    let chatbotQuestionsPerDay: Int
+    let insightRefreshesPerWeek: Int
 
-    // Fallback defaults when Firebase has not loaded yet
+    // MARK: - Fallbacks
     static let freeFallback = PlanLimits(
+        maxEssaysPerDay: 1,
         gradingAttemptsPerEssay: 1,
-        maxEssaysPerDay: 2,
+        submissionsPerEssayPerDay: 1,
         chatbotQuestionsPerDay: 0,
-        submissionsPerEssayPerDay: 1
+        insightRefreshesPerWeek: 0
     )
 
     static let advancedFallback = PlanLimits(
+        maxEssaysPerDay: 5,
         gradingAttemptsPerEssay: 3,
-        maxEssaysPerDay: 3,
-        chatbotQuestionsPerDay: 10,
-        submissionsPerEssayPerDay: 3
+        submissionsPerEssayPerDay: 3,
+        chatbotQuestionsPerDay: 20,
+        insightRefreshesPerWeek: 3
     )
 
     static let premierFallback = PlanLimits(
-        gradingAttemptsPerEssay: 5,
-        maxEssaysPerDay: 5,
-        chatbotQuestionsPerDay: 50,
-        submissionsPerEssayPerDay: 5
+        maxEssaysPerDay: .max,
+        gradingAttemptsPerEssay: .max,
+        submissionsPerEssayPerDay: .max,
+        chatbotQuestionsPerDay: 100,
+        insightRefreshesPerWeek: 5
     )
 
-    // Safe decode - fallback when Firebase field is missing
+    // Safe decode — fallback when Firebase field is missing
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        maxEssaysPerDay =
+            try c.decodeIfPresent(Int.self, forKey: .maxEssaysPerDay) ?? 2
         gradingAttemptsPerEssay =
             try c.decodeIfPresent(Int.self, forKey: .gradingAttemptsPerEssay)
             ?? 1
-        maxEssaysPerDay =
-            try c.decodeIfPresent(Int.self, forKey: .maxEssaysPerDay) ?? 2
-        chatbotQuestionsPerDay =
-            try c.decodeIfPresent(Int.self, forKey: .chatbotQuestionsPerDay)
-            ?? 0
         submissionsPerEssayPerDay =
             try c.decodeIfPresent(Int.self, forKey: .submissionsPerEssayPerDay)
             ?? 1
+        chatbotQuestionsPerDay =
+            try c.decodeIfPresent(Int.self, forKey: .chatbotQuestionsPerDay)
+            ?? 0
+        insightRefreshesPerWeek =
+            try c.decodeIfPresent(Int.self, forKey: .insightRefreshesPerWeek)
+            ?? 0
     }
 
     init(
-        gradingAttemptsPerEssay: Int,
         maxEssaysPerDay: Int,
+        gradingAttemptsPerEssay: Int,
+        submissionsPerEssayPerDay: Int,
         chatbotQuestionsPerDay: Int,
-        submissionsPerEssayPerDay: Int
+        insightRefreshesPerWeek: Int
     ) {
-        self.gradingAttemptsPerEssay = gradingAttemptsPerEssay
         self.maxEssaysPerDay = maxEssaysPerDay
-        self.chatbotQuestionsPerDay = chatbotQuestionsPerDay
+        self.gradingAttemptsPerEssay = gradingAttemptsPerEssay
         self.submissionsPerEssayPerDay = submissionsPerEssayPerDay
+        self.chatbotQuestionsPerDay = chatbotQuestionsPerDay
+        self.insightRefreshesPerWeek = insightRefreshesPerWeek
     }
 }
 
@@ -236,7 +242,7 @@ struct Plan: Codable, Identifiable {
     @DocumentID var id: String?
     let displayName: String
     let benefits: PlanBenefits
-    let limits: PlanLimits?  // Optional: free plan only has limits, no benefits
+    let limits: PlanLimits?
 
     enum CodingKeys: String, CodingKey {
         case displayName, benefits, limits
@@ -245,10 +251,10 @@ struct Plan: Codable, Identifiable {
 
 // MARK: - Daily Usage
 struct DailyUsage: Codable {
-    var gradingAttemptsPerEssay: [String: Int]  // questionId -> count
+    var gradingAttemptsPerEssay: [String: Int]
     var totalEssaysGradedToday: Int
     var chatbotQuestionsToday: Int
-    var submissionsPerEssay: [String: Int]  // questionId -> count
+    var submissionsPerEssay: [String: Int]
 
     static let empty = DailyUsage(
         gradingAttemptsPerEssay: [:],
@@ -256,6 +262,14 @@ struct DailyUsage: Codable {
         chatbotQuestionsToday: 0,
         submissionsPerEssay: [:]
     )
+}
+
+// MARK: - Weekly Insight Usage
+struct WeeklyInsightUsage {
+    var weekKey: String
+    var usedCount: Int
+
+    static let empty = WeeklyInsightUsage(weekKey: "", usedCount: 0)
 }
 
 // MARK: - Usage Check Result
@@ -394,7 +408,6 @@ struct ChatMessage: Identifiable, Equatable {
     }
 }
 
-// Codable representation for Firestore storage
 struct ChatMessageRecord: Codable {
     let id: String
     let role: String
@@ -447,10 +460,63 @@ enum AIChatError: LocalizedError {
 }
 
 // MARK: - Markdown Block
-// Represents a parsed block-level markdown element
 enum MarkdownBlock {
     case paragraph(String)
     case numberedItem(Int, String)
     case bulletItem(String, Int)
     case spacer
+}
+
+// MARK: - Analytics Models
+
+struct UserProgressInsights: Codable {
+    let overallInsight: String
+    let strengths: [String]
+    let weaknesses: [String]
+    let recommendations: [ProgressRecommendation]
+    let nextGoal: String
+    let trendLabel: TrendLabel
+
+    enum TrendLabel: String, Codable {
+        case improving, stable, declining
+
+        var icon: String {
+            switch self {
+            case .improving: return "arrow.up.right.circle.fill"
+            case .stable:    return "arrow.right.circle.fill"
+            case .declining: return "arrow.down.right.circle.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .improving: return .green
+            case .stable:    return BrandColor.medium
+            case .declining: return .red
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .improving: return "Improving"
+            case .stable:    return "Stable"
+            case .declining: return "Declining"
+            }
+        }
+    }
+}
+
+struct ProgressRecommendation: Codable, Identifiable {
+    var id: String { area }
+    let area: String
+    let tip: String
+}
+
+struct AnalyzeProgressResponse: Codable {
+    let insights: UserProgressInsights
+    let cached: Bool
+    let updatedAt: String?
+    let usedCount: Int?
+    let weeklyLimit: Int?
+    let weekKey: String?
 }

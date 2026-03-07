@@ -1,10 +1,10 @@
+internal import FirebaseFirestoreInternal
 import FirebaseFunctions
 import Foundation
 
 extension FirebaseService {
 
     // MARK: - Ask AI
-    // Genkit-compatible mapping handled here, not in ChatMessage model
     func askAI(messages: [ChatMessage]) async throws -> String {
         guard isAuthenticated else {
             throw AIChatError.unauthenticated
@@ -48,5 +48,42 @@ extension FirebaseService {
             default: throw AIChatError.unknown(error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - Fetch Weekly Insight Usage
+    func fetchWeeklyInsightUsage() async throws -> WeeklyInsightUsage {  // Them async
+        guard let uid = currentUserId else { return .empty }
+
+        let snap =
+            try await db
+            .collection("users").document(uid)
+            .collection("analytics").document("insightUsage")
+            .getDocument()
+
+        guard let data = snap.data() else { return .empty }
+
+        return WeeklyInsightUsage(
+            weekKey: data["weekKey"] as? String ?? "",
+            usedCount: data["usedCount"] as? Int ?? 0
+        )
+    }
+
+    // MARK: - Increment Weekly Insight Refresh
+    func incrementInsightRefresh(weekKey: String) async throws {  // Them async
+        guard let uid = currentUserId else { return }
+
+        let ref =
+            db
+            .collection("users").document(uid)
+            .collection("analytics").document("insightUsage")
+
+        try await ref.setData(
+            [
+                "weekKey": weekKey,
+                "usedCount": FieldValue.increment(Int64(1)),
+                "lastRefreshAt": FieldValue.serverTimestamp(),
+            ],
+            merge: true
+        )
     }
 }
