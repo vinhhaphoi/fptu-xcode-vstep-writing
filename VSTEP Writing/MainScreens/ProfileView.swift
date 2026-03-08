@@ -6,6 +6,7 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @EnvironmentObject var firebaseService: FirebaseService
+    @Environment(StoreKitManager.self) private var store
     @AppStorage("isDarkMode") private var isDarkMode = false
 
     // Navigation States
@@ -29,6 +30,7 @@ struct ProfileView: View {
     @State private var alertMessage: AlertMessage?
 
     private let db = Firestore.firestore()
+    private var usageManager: AIUsageManager { AIUsageManager.shared }
 
     var body: some View {
         ScrollView {
@@ -38,6 +40,11 @@ struct ProfileView: View {
             subscriptionStatusCard
                 .padding(.horizontal)
                 .padding(.bottom, 4)
+
+            quotaCard
+//                .padding(.horizontal)
+//                .padding(.bottom, 4)
+                .padding()
 
             policyButtons
                 .padding()
@@ -63,18 +70,14 @@ struct ProfileView: View {
             selection: $selectedImage,
             matching: .images
         )
-        .refreshable {
-            await refreshProfile()
-        }
+        .refreshable { await refreshProfile() }
         .onChange(of: selectedImage) { _, newItem in
             Task { await handleImageSelection(newItem) }
         }
-        // Show error alert from FirebaseService avatar upload
         .onChange(of: firebaseService.avatarUploadError) { _, errorMsg in
             guard let errorMsg else { return }
             alertMessage = AlertMessage(title: "Error", message: errorMsg)
         }
-        // Show success alert when upload completes
         .onChange(of: firebaseService.isUploadingPhoto) { _, isUploading in
             guard !isUploading, firebaseService.uploadedAvatarURL != nil,
                 firebaseService.avatarUploadError == nil
@@ -119,6 +122,7 @@ struct ProfileView: View {
         .task {
             await loadSubscription()
             await firebaseService.fetchAvatarURL()
+            await usageManager.loadInitialData()
         }
     }
 
@@ -170,7 +174,6 @@ struct ProfileView: View {
     }
 
     // MARK: - Avatar View
-    // Priority: local preview -> uploaded URL -> Firebase Auth URL -> placeholder
     @ViewBuilder
     private var avatarView: some View {
         if let localPreview = localAvatarPreview {
@@ -187,7 +190,6 @@ struct ProfileView: View {
                 }
             }
         } else if let photoURL = authManager.user?.photoURL {
-            // Fallback to Firebase Auth photoURL (Google Sign In)
             AsyncImage(url: photoURL) { phase in
                 switch phase {
                 case .success(let image): image.resizable().scaledToFill()
@@ -296,6 +298,200 @@ struct ProfileView: View {
                 .buttonStyle(.plain)
                 .glassEffect()
             }
+        }
+    }
+
+    // MARK: - ⭐ Quota Card
+
+    private var quotaCard: some View {
+        let limits = usageManager.limits(for: store)
+        let isFree =
+            !store.isPurchased("com.vstep.advanced")
+            && !store.isPurchased("com.vstep.premier")
+
+        return VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 10) {
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(BrandColor.primary)
+                Text("Today's Usage")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(BrandColor.primary)
+                Spacer()
+                Text("Resets at midnight")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            Divider().padding(.horizontal, 20)
+
+            // Essays/day
+            quotaRow(
+                icon: "doc.text.fill",
+                iconColor: .blue,
+                title: "Essays per day",
+                used: usageManager.dailyUsage.totalEssaysGradedToday,
+                total: limits.maxEssaysPerDay,
+                isUnlimited: limits.maxEssaysPerDay == Int.max
+            )
+
+            Divider().padding(.leading, 68)
+
+            // AI Grading — dung so lan grading trung binh cua cac essay hom nay
+            let avgGradingUsed =
+                usageManager.dailyUsage.gradingAttemptsPerEssay.values.max()
+                ?? 0
+            quotaRow(
+                icon: "brain.head.profile",
+                iconColor: BrandColor.primary,
+                title: "AI grading per essay",
+                used: avgGradingUsed,
+                total: limits.gradingAttemptsPerEssay,
+                isUnlimited: limits.gradingAttemptsPerEssay == Int.max
+            )
+
+            Divider().padding(.leading, 68)
+
+            // Chatbot
+            quotaRow(
+                icon: "bubble.left.and.bubble.right.fill",
+                iconColor: .purple,
+                title: "Chatbot questions",
+                used: usageManager.dailyUsage.chatbotQuestionsToday,
+                total: limits.chatbotQuestionsPerDay,
+                isUnlimited: false,
+                isLocked: isFree
+            )
+
+            Divider().padding(.leading, 68)
+
+            // Weekly Insights
+            let currentWeek = AIUsageManager.isoWeekKey()
+            let insightUsed =
+                usageManager.weeklyInsightUsage.weekKey == currentWeek
+                ? usageManager.weeklyInsightUsage.usedCount : 0
+
+            quotaRow(
+                icon: "chart.bar.doc.horizontal.fill",
+                iconColor: .orange,
+                title: "AI insight refreshes",
+                used: insightUsed,
+                total: limits.insightRefreshesPerWeek,
+                isUnlimited: false,
+                isLocked: isFree,
+                isWeekly: true,
+                isLast: true
+            )
+        }
+        .glassEffect(in: .rect(cornerRadius: 16.0))
+    }
+
+    private func quotaRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        used: Int,
+        total: Int,
+        isUnlimited: Bool,
+        isLocked: Bool = false,
+        isWeekly: Bool = false,
+        isLast: Bool = false
+    ) -> some View {
+        let remaining = max(0, total - used)
+        let progress =
+            isUnlimited || total == 0
+            ? 1.0 : min(Double(used) / Double(total), 1.0)
+        let isExhausted = !isUnlimited && !isLocked && remaining == 0
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                // Icon
+                Image(systemName: isLocked ? "lock.fill" : icon)
+                    .font(.system(size: 18))
+                    .foregroundStyle(isLocked ? Color.secondary : iconColor)
+                    .frame(width: 28)
+                    .padding(.leading, 20)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(isLocked ? .secondary : .primary)
+
+                        if isWeekly {
+                            Text("/ week")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .glassEffect(in: .capsule)
+                        }
+
+                        Spacer()
+
+                        // Quota label
+                        if isLocked {
+                            Text("Upgrade")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(BrandColor.primary))
+                        } else if isUnlimited {
+                            Label("Unlimited", systemImage: "infinity")
+                                .font(.caption2.bold())
+                                .foregroundStyle(BrandColor.light)
+                        } else {
+                            Text(isExhausted ? "Used up" : "\(remaining) left")
+                                .font(.caption2.bold())
+                                .foregroundStyle(
+                                    isExhausted ? Color.red : BrandColor.medium
+                                )
+                        }
+                    }
+
+                    // Progress bar
+                    if !isLocked && !isUnlimited && total > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.secondary.opacity(0.15))
+                                    .frame(height: 5)
+                                Capsule()
+                                    .fill(
+                                        isExhausted
+                                            ? Color.red
+                                            : progress > 0.75
+                                                ? Color.orange : iconColor
+                                    )
+                                    .frame(
+                                        width: geo.size.width * progress,
+                                        height: 5
+                                    )
+                                    .animation(
+                                        .easeOut(duration: 0.5),
+                                        value: progress
+                                    )
+                            }
+                        }
+                        .frame(height: 5)
+
+                        Text("\(used) / \(total) used")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    } else if isUnlimited {
+                        Text("\(used) used today")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.trailing, 20)
+            }
+            .padding(.vertical, 14)
         }
     }
 
@@ -419,17 +615,13 @@ struct ProfileView: View {
     private var appInfoFooter: some View {
         VStack(spacing: 6) {
             Text("VSTEP Writing")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
             Text("Version 1.0.0")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .font(.caption).foregroundStyle(.tertiary)
             Text("Powered by Vinhhaphoi from NTHT x Vinhhaphoi")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
             Text("© 2026 All rights reserved")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
@@ -441,12 +633,10 @@ struct ProfileView: View {
             isLoadingSubscription = false
             return
         }
-
         do {
             let doc = try await db.collection("subscriptions").document(userID)
                 .getDocument()
             let data = doc.data()
-
             await MainActor.run {
                 subscriptionStatus = data?["status"] as? String
                 subscriptionProductID = data?["productID"] as? String
@@ -467,31 +657,25 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Actions
     private func handleLogout() {
-        do {
-            try authManager.signOut()
-        } catch {
+        do { try authManager.signOut() } catch {
             print("Logout error: \(error.localizedDescription)")
         }
     }
+
     private func refreshProfile() async {
         await withTaskGroup(of: Void.self) { group in
-            // Reload subscription status
             group.addTask { await self.loadSubscription() }
-            // Reload avatar URL from Firestore
             group.addTask { await self.firebaseService.fetchAvatarURL() }
-            // Reload user progress if needed
             group.addTask {
                 try? await self.firebaseService.fetchUserProgress()
             }
+            group.addTask { await self.usageManager.loadInitialData() }  // ⭐ Refresh quota
         }
     }
 
-    // MARK: - Actions
     private func handleImageSelection(_ item: PhotosPickerItem?) async {
         guard let item else { return }
-
         do {
             guard let data = try await item.loadTransferable(type: Data.self),
                 let uiImage = UIImage(data: data)
@@ -502,21 +686,16 @@ struct ProfileView: View {
                 )
                 return
             }
-
-            // Show local preview immediately without waiting for upload
             localAvatarPreview = Image(uiImage: uiImage)
             firebaseService.isUploadingPhoto = true
             firebaseService.avatarUploadError = nil
-
             let newURL = try await firebaseService.uploadAvatar(image: uiImage)
-
             firebaseService.isUploadingPhoto = false
             localAvatarPreview = nil
             alertMessage = AlertMessage(
                 title: "Success",
                 message: "Profile photo updated!"
             )
-
             print("[ProfileView] Avatar upload success — URL: \(newURL)")
         } catch {
             firebaseService.isUploadingPhoto = false
@@ -527,5 +706,4 @@ struct ProfileView: View {
             )
         }
     }
-
 }
