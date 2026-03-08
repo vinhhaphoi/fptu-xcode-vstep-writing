@@ -32,6 +32,10 @@ struct ProfileView: View {
     private let db = Firestore.firestore()
     private var usageManager: AIUsageManager { AIUsageManager.shared }
 
+    // MARK: - Icon Size Constants
+    private let cardIconSize: CGFloat = 20
+    private let cardIconFrameWidth: CGFloat = 40
+
     var body: some View {
         ScrollView {
             profileHeaderCard
@@ -207,7 +211,7 @@ struct ProfileView: View {
         Circle()
             .fill(BrandColor.primary.gradient)
             .overlay {
-                Image(systemName: "person.fill")
+                Image(systemName: "person")
                     .font(.system(size: 48, weight: .medium))
                     .foregroundStyle(.white)
             }
@@ -242,10 +246,10 @@ struct ProfileView: View {
                     showSubscription = true
                 } label: {
                     HStack(spacing: 15) {
-                        Image(systemName: "crown.fill")
-                            .font(.system(size: 22))
+                        Image(systemName: "crown")
+                            .font(.system(size: cardIconSize))
                             .foregroundStyle(BrandColor.soft)
-                            .frame(width: 40)
+                            .frame(width: cardIconFrameWidth)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(planDisplayName(for: productID))
                                 .font(.system(size: 17, weight: .semibold))
@@ -274,9 +278,9 @@ struct ProfileView: View {
                 } label: {
                     HStack(spacing: 15) {
                         Image(systemName: "crown")
-                            .font(.system(size: 22))
+                            .font(.system(size: cardIconSize))
                             .foregroundStyle(BrandColor.medium)
-                            .frame(width: 40)
+                            .frame(width: cardIconFrameWidth)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("No Active Plan")
                                 .font(.system(size: 17, weight: .regular))
@@ -309,7 +313,7 @@ struct ProfileView: View {
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "gauge.with.dots.needle.67percent")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: cardIconSize, weight: .semibold))
                     .foregroundStyle(BrandColor.primary)
                 Text("Today's Usage")
                     .font(.system(size: 15, weight: .semibold))
@@ -326,7 +330,7 @@ struct ProfileView: View {
             Divider().padding(.horizontal, 20)
 
             quotaRow(
-                icon: "doc.text.fill",
+                icon: "doc.text",
                 iconColor: BrandColor.primary,
                 title: "Essays per day",
                 used: usageManager.dailyUsage.totalEssaysGradedToday,
@@ -351,7 +355,7 @@ struct ProfileView: View {
             Divider().padding(.leading, 68)
 
             quotaRow(
-                icon: "bubble.left.and.bubble.right.fill",
+                icon: "bubble.left.and.bubble.right",
                 iconColor: BrandColor.soft,
                 title: "Chatbot questions",
                 used: usageManager.dailyUsage.chatbotQuestionsToday,
@@ -368,7 +372,7 @@ struct ProfileView: View {
                 ? usageManager.weeklyInsightUsage.usedCount : 0
 
             quotaRow(
-                icon: "chart.bar.doc.horizontal.fill",
+                icon: "chart.bar.doc.horizontal",
                 iconColor: BrandColor.light,
                 title: "AI insight refreshes",
                 used: insightUsed,
@@ -401,10 +405,10 @@ struct ProfileView: View {
 
         return VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: isLocked ? "lock.fill" : icon)
-                    .font(.system(size: 18))
+                Image(systemName: isLocked ? "lock" : icon)
+                    .font(.system(size: cardIconSize))
                     .foregroundStyle(isLocked ? Color.secondary : iconColor)
-                    .frame(width: 28)
+                    .frame(width: cardIconFrameWidth)
                     .padding(.leading, 20)
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -495,9 +499,9 @@ struct ProfileView: View {
                 } label: {
                     HStack(spacing: 15) {
                         Image(systemName: policy.icon)
-                            .font(.system(size: 24))
+                            .font(.system(size: cardIconSize))
                             .foregroundStyle(policy.iconColor)
-                            .frame(width: 40)
+                            .frame(width: cardIconFrameWidth)
                         Text(policy.title)
                             .font(.system(size: 17, weight: .regular))
                             .foregroundStyle(.primary)
@@ -540,9 +544,9 @@ struct ProfileView: View {
     private var darkModeToggle: some View {
         HStack(spacing: 15) {
             Image(systemName: isDarkMode ? "moon.stars.fill" : "sun.max.fill")
-                .font(.system(size: 24))
+                .font(.system(size: cardIconSize))
                 .foregroundStyle(isDarkMode ? BrandColor.medium : .orange)
-                .frame(width: 40)
+                .frame(width: cardIconFrameWidth)
                 .contentTransition(.symbolEffect(.replace))
             Text("Dark Mode")
                 .font(.system(size: 17, weight: .regular))
@@ -564,9 +568,9 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 15) {
                 Image(systemName: "rectangle.portrait.and.arrow.forward")
-                    .font(.system(size: 24))
+                    .font(.system(size: cardIconSize))
                     .foregroundStyle(.red)
-                    .frame(width: 40)
+                    .frame(width: cardIconFrameWidth)
                 Text("Sign Out")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.primary)
@@ -585,9 +589,9 @@ struct ProfileView: View {
         } label: {
             HStack(spacing: 15) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 24))
+                    .font(.system(size: cardIconSize))
                     .foregroundStyle(BrandColor.primary)
-                    .frame(width: 40)
+                    .frame(width: cardIconFrameWidth)
                 Text("Contact us")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(.primary)
