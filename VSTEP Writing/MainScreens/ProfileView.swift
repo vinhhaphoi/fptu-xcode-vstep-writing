@@ -30,7 +30,7 @@ struct ProfileView: View {
     @State private var alertMessage: AlertMessage?
 
     private let db = Firestore.firestore()
-    private var usageManager: AIUsageManager { AIUsageManager.shared }
+    @State private var usageManager = AIUsageManager.shared
 
     // MARK: - Icon Size Constants
     private let cardIconSize: CGFloat = 20

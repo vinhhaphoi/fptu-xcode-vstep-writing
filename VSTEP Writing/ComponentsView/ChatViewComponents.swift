@@ -64,6 +64,7 @@ final class ChatViewModel: ObservableObject {
         Task { await fetchAIReply(userMessage: userMessage) }
     }
 
+    // Trong fetchAIReply() — sau khi AI reply thanh cong
     private func fetchAIReply(userMessage: ChatMessage) async {
         isTyping = true
 
@@ -73,10 +74,11 @@ final class ChatViewModel: ObservableObject {
             messages.append(aiMessage)
             await saveMessages([userMessage, aiMessage])
 
+            await AIUsageManager.shared.recordChatbotQuestion()
+
         } catch AIChatError.unauthenticated {
             messages.removeLast()
             errorMessage = AIChatError.unauthenticated.errorDescription
-
         } catch {
             errorMessage =
                 (error as? AIChatError)?.errorDescription

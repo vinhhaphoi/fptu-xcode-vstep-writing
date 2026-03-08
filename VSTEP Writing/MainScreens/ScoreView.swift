@@ -8,6 +8,9 @@ import SwiftUI
 // MARK: - AnalyticsManager
 @MainActor
 final class AnalyticsManager: ObservableObject {
+    
+    static let shared = AnalyticsManager()
+    
     @Published var insights: UserProgressInsights? = nil
     @Published var isFetching: Bool = false
     @Published var errorMessage: String? = nil

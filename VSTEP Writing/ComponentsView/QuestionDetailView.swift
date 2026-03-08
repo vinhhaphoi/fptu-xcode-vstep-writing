@@ -153,10 +153,20 @@ struct QuestionDetailView: View {
         } message: {
             Text(limitAlertMessage)
         }
-        .onChange(of: latestSubmission) { _, _ in
+        .onChange(of: latestSubmission) {
             isSubmitting = false
             isResubmitting = false
+
+            if let submission = latestSubmission, submission.score != nil {
+                Task {
+                    await AIUsageManager.shared.recordGrading(
+                        questionId: question.questionId
+                    )
+//                    AnalyticsManager.shared.triggerAutoRefreshIfEnabled()
+                }
+            }
         }
+
     }
 
     // MARK: - Prompt Content

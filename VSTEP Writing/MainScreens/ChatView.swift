@@ -294,10 +294,6 @@ struct ChatView: View {
         guard canChat else { return }
 
         viewModel.sendMessage()
-
-        Task {
-            await usageManager.recordChatbotQuestion()
-        }
     }
 
     // MARK: - Scroll Helpers

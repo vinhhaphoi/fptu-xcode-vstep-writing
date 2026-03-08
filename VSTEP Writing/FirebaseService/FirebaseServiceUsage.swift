@@ -1,6 +1,29 @@
 import FirebaseFirestore
 import Foundation
 
+// MARK: - Firestore Map Helpers
+
+/// Safely converts a Firestore nested map (returned as [String: Any]) to [String: Int].
+private func intMapFromFirestore(_ raw: Any?) -> [String: Int] {
+    guard let dict = raw as? [String: Any] else { return [:] }
+    return dict.compactMapValues { ($0 as? NSNumber)?.intValue }
+}
+
+/// Extracts values from flat dot-notation keys like "submissionsPerEssay.q011"
+/// into a [String: Int] map (for backwards compatibility with old data format).
+private func extractFlatDotMap(from data: [String: Any], prefix: String) -> [String: Int] {
+    var result: [String: Int] = [:]
+    for (key, value) in data {
+        if key.hasPrefix(prefix), let intVal = (value as? NSNumber)?.intValue {
+            let subKey = String(key.dropFirst(prefix.count))
+            if !subKey.isEmpty {
+                result[subKey] = intVal
+            }
+        }
+    }
+    return result
+}
+
 extension FirebaseService {
 
     // MARK: - Daily Usage Document Key
@@ -27,13 +50,17 @@ extension FirebaseService {
             return .empty
         }
 
+        // Support both nested maps AND old flat dot-notation keys
+        let gradingMap = intMapFromFirestore(data["gradingAttemptsPerEssay"])
+            .merging(extractFlatDotMap(from: data, prefix: "gradingAttemptsPerEssay.")) { nested, _ in nested }
+        let submissionMap = intMapFromFirestore(data["submissionsPerEssay"])
+            .merging(extractFlatDotMap(from: data, prefix: "submissionsPerEssay.")) { nested, _ in nested }
+
         return DailyUsage(
-            gradingAttemptsPerEssay: data["gradingAttemptsPerEssay"]
-                as? [String: Int] ?? [:],
-            totalEssaysGradedToday: data["totalEssaysGradedToday"] as? Int ?? 0,
-            chatbotQuestionsToday: data["chatbotQuestionsToday"] as? Int ?? 0,
-            submissionsPerEssay: data["submissionsPerEssay"] as? [String: Int]
-                ?? [:]
+            gradingAttemptsPerEssay: gradingMap,
+            totalEssaysGradedToday: (data["totalEssaysGradedToday"] as? NSNumber)?.intValue ?? 0,
+            chatbotQuestionsToday: (data["chatbotQuestionsToday"] as? NSNumber)?.intValue ?? 0,
+            submissionsPerEssay: submissionMap
         )
     }
 
@@ -46,18 +73,24 @@ extension FirebaseService {
 
         let ref = usageRef(userId: userId)
         let doc = try await ref.getDocument()
-        let existing =
-            doc.data()?["gradingAttemptsPerEssay"] as? [String: Int] ?? [:]
+        let data = doc.data()
+
+        // Read existing map (handles both nested + flat formats)
+        let existing = intMapFromFirestore(data?["gradingAttemptsPerEssay"])
+            .merging(extractFlatDotMap(from: data ?? [:], prefix: "gradingAttemptsPerEssay.")) { nested, _ in nested }
         let isNewEssay = existing[questionId] == nil
 
+        // Build the updated map and write as a proper nested structure
+        var gradingMap = existing
+        gradingMap[questionId] = (gradingMap[questionId] ?? 0) + 1
+
         var updates: [String: Any] = [
-            "gradingAttemptsPerEssay.\(questionId)": FieldValue.increment(
-                Int64(1)
-            )
+            "gradingAttemptsPerEssay": gradingMap
         ]
 
         if isNewEssay {
-            updates["totalEssaysGradedToday"] = FieldValue.increment(Int64(1))
+            let currentTotal = (data?["totalEssaysGradedToday"] as? NSNumber)?.intValue ?? 0
+            updates["totalEssaysGradedToday"] = currentTotal + 1
         }
 
         try await ref.setData(updates, merge: true)
@@ -81,13 +114,17 @@ extension FirebaseService {
             throw FirebaseServiceError.notAuthenticated
         }
 
-        try await usageRef(userId: userId).setData(
-            [
-                "submissionsPerEssay.\(questionId)": FieldValue.increment(
-                    Int64(1)
-                )
-            ],
-            merge: true
-        )
+        let ref = usageRef(userId: userId)
+        let doc = try await ref.getDocument()
+        let data = doc.data()
+
+        // Read existing map (handles both nested + flat formats)
+        let existing = intMapFromFirestore(data?["submissionsPerEssay"])
+            .merging(extractFlatDotMap(from: data ?? [:], prefix: "submissionsPerEssay.")) { nested, _ in nested }
+
+        var submissionMap = existing
+        submissionMap[questionId] = (submissionMap[questionId] ?? 0) + 1
+
+        try await ref.setData(["submissionsPerEssay": submissionMap], merge: true)
     }
 }
