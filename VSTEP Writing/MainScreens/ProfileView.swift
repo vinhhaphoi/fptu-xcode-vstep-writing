@@ -42,9 +42,8 @@ struct ProfileView: View {
                 .padding(.bottom, 4)
 
             quotaCard
-//                .padding(.horizontal)
-//                .padding(.bottom, 4)
-                .padding()
+                .padding(.horizontal)
+                .padding(.bottom, 4)
 
             policyButtons
                 .padding()
@@ -134,6 +133,7 @@ struct ProfileView: View {
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape")
+                    .foregroundStyle(BrandColor.primary)
             }
         }
     }
@@ -160,9 +160,9 @@ struct ProfileView: View {
                 } label: {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 14))
-                        .foregroundColor(.white)
+                        .foregroundStyle(.white)
                         .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.blue))
+                        .background(Circle().fill(BrandColor.primary))
                         .shadow(radius: 3)
                 }
                 .disabled(firebaseService.isUploadingPhoto)
@@ -205,11 +205,11 @@ struct ProfileView: View {
 
     private var avatarPlaceholder: some View {
         Circle()
-            .fill(Color.blue.gradient)
+            .fill(BrandColor.primary.gradient)
             .overlay {
                 Image(systemName: "person.fill")
                     .font(.system(size: 48, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundStyle(.white)
             }
     }
 
@@ -219,15 +219,15 @@ struct ProfileView: View {
             if isLoadingSubscription {
                 HStack(spacing: 15) {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.2))
+                        .fill(BrandColor.muted)
                         .frame(width: 28, height: 28)
                         .frame(width: 40)
                     VStack(alignment: .leading, spacing: 6) {
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.secondary.opacity(0.2))
+                            .fill(BrandColor.muted.opacity(0.9))
                             .frame(width: 120, height: 14)
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(Color.secondary.opacity(0.15))
+                            .fill(BrandColor.muted.opacity(0.7))
                             .frame(width: 80, height: 11)
                     }
                     Spacer()
@@ -235,7 +235,6 @@ struct ProfileView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
                 .glassEffect()
-
             } else if subscriptionStatus == "active",
                 let productID = subscriptionProductID
             {
@@ -245,12 +244,12 @@ struct ProfileView: View {
                     HStack(spacing: 15) {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 22))
-                            .foregroundStyle(.yellow)
+                            .foregroundStyle(BrandColor.soft)
                             .frame(width: 40)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(planDisplayName(for: productID))
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(BrandColor.primary)
                             if let expiry = subscriptionExpiry {
                                 Text(
                                     "Renews \(expiry.formatted(.dateTime.day().month(.wide).year()))"
@@ -269,7 +268,6 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect()
-
             } else {
                 Button {
                     showSubscription = true
@@ -277,12 +275,12 @@ struct ProfileView: View {
                     HStack(spacing: 15) {
                         Image(systemName: "crown")
                             .font(.system(size: 22))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(BrandColor.medium)
                             .frame(width: 40)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("No Active Plan")
                                 .font(.system(size: 17, weight: .regular))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(BrandColor.primary)
                             Text("Upgrade to unlock all features")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -301,8 +299,7 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - ⭐ Quota Card
-
+    // MARK: - Quota Card (đã có BrandColor ở lần trước)
     private var quotaCard: some View {
         let limits = usageManager.limits(for: store)
         let isFree =
@@ -310,7 +307,6 @@ struct ProfileView: View {
             && !store.isPurchased("com.vstep.premier")
 
         return VStack(spacing: 0) {
-            // Header
             HStack(spacing: 10) {
                 Image(systemName: "gauge.with.dots.needle.67percent")
                     .font(.system(size: 16, weight: .semibold))
@@ -329,10 +325,9 @@ struct ProfileView: View {
 
             Divider().padding(.horizontal, 20)
 
-            // Essays/day
             quotaRow(
                 icon: "doc.text.fill",
-                iconColor: .blue,
+                iconColor: BrandColor.primary,
                 title: "Essays per day",
                 used: usageManager.dailyUsage.totalEssaysGradedToday,
                 total: limits.maxEssaysPerDay,
@@ -341,13 +336,12 @@ struct ProfileView: View {
 
             Divider().padding(.leading, 68)
 
-            // AI Grading — dung so lan grading trung binh cua cac essay hom nay
             let avgGradingUsed =
                 usageManager.dailyUsage.gradingAttemptsPerEssay.values.max()
                 ?? 0
             quotaRow(
                 icon: "brain.head.profile",
-                iconColor: BrandColor.primary,
+                iconColor: BrandColor.medium,
                 title: "AI grading per essay",
                 used: avgGradingUsed,
                 total: limits.gradingAttemptsPerEssay,
@@ -356,10 +350,9 @@ struct ProfileView: View {
 
             Divider().padding(.leading, 68)
 
-            // Chatbot
             quotaRow(
                 icon: "bubble.left.and.bubble.right.fill",
-                iconColor: .purple,
+                iconColor: BrandColor.soft,
                 title: "Chatbot questions",
                 used: usageManager.dailyUsage.chatbotQuestionsToday,
                 total: limits.chatbotQuestionsPerDay,
@@ -369,7 +362,6 @@ struct ProfileView: View {
 
             Divider().padding(.leading, 68)
 
-            // Weekly Insights
             let currentWeek = AIUsageManager.isoWeekKey()
             let insightUsed =
                 usageManager.weeklyInsightUsage.weekKey == currentWeek
@@ -377,7 +369,7 @@ struct ProfileView: View {
 
             quotaRow(
                 icon: "chart.bar.doc.horizontal.fill",
-                iconColor: .orange,
+                iconColor: BrandColor.light,
                 title: "AI insight refreshes",
                 used: insightUsed,
                 total: limits.insightRefreshesPerWeek,
@@ -409,7 +401,6 @@ struct ProfileView: View {
 
         return VStack(spacing: 0) {
             HStack(spacing: 14) {
-                // Icon
                 Image(systemName: isLocked ? "lock.fill" : icon)
                     .font(.system(size: 18))
                     .foregroundStyle(isLocked ? Color.secondary : iconColor)
@@ -433,7 +424,6 @@ struct ProfileView: View {
 
                         Spacer()
 
-                        // Quota label
                         if isLocked {
                             Text("Upgrade")
                                 .font(.caption2.bold())
@@ -454,12 +444,11 @@ struct ProfileView: View {
                         }
                     }
 
-                    // Progress bar
                     if !isLocked && !isUnlimited && total > 0 {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
                                 Capsule()
-                                    .fill(Color.secondary.opacity(0.15))
+                                    .fill(BrandColor.muted.opacity(0.7))
                                     .frame(height: 5)
                                 Capsule()
                                     .fill(
@@ -534,13 +523,13 @@ struct ProfileView: View {
         [
             PolicyInfo(
                 icon: "newspaper",
-                iconColor: .blue,
+                iconColor: BrandColor.primary,
                 title: "Terms of Use",
                 type: .termsOfUse
             ),
             PolicyInfo(
                 icon: "hand.raised",
-                iconColor: .purple,
+                iconColor: BrandColor.light,
                 title: "Privacy Policy",
                 type: .privacyPolicy
             ),
@@ -552,7 +541,7 @@ struct ProfileView: View {
         HStack(spacing: 15) {
             Image(systemName: isDarkMode ? "moon.stars.fill" : "sun.max.fill")
                 .font(.system(size: 24))
-                .foregroundStyle(isDarkMode ? .indigo : .orange)
+                .foregroundStyle(isDarkMode ? BrandColor.medium : .orange)
                 .frame(width: 40)
                 .contentTransition(.symbolEffect(.replace))
             Text("Dark Mode")
@@ -561,7 +550,7 @@ struct ProfileView: View {
             Spacer()
             Toggle("", isOn: $isDarkMode.animation(.easeInOut(duration: 0.3)))
                 .labelsHidden()
-                .tint(.accentColor)
+                .tint(BrandColor.primary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -597,7 +586,7 @@ struct ProfileView: View {
             HStack(spacing: 15) {
                 Image(systemName: "info.circle")
                     .font(.system(size: 24))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(BrandColor.primary)
                     .frame(width: 40)
                 Text("Contact us")
                     .font(.system(size: 17, weight: .regular))
@@ -615,13 +604,17 @@ struct ProfileView: View {
     private var appInfoFooter: some View {
         VStack(spacing: 6) {
             Text("VSTEP Writing")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("Version 1.0.0")
-                .font(.caption).foregroundStyle(.tertiary)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             Text("Powered by Vinhhaphoi from NTHT x Vinhhaphoi")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text("© 2026 All rights reserved")
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
@@ -658,7 +651,9 @@ struct ProfileView: View {
     }
 
     private func handleLogout() {
-        do { try authManager.signOut() } catch {
+        do {
+            try authManager.signOut()
+        } catch {
             print("Logout error: \(error.localizedDescription)")
         }
     }
@@ -670,12 +665,13 @@ struct ProfileView: View {
             group.addTask {
                 try? await self.firebaseService.fetchUserProgress()
             }
-            group.addTask { await self.usageManager.loadInitialData() }  // ⭐ Refresh quota
+            group.addTask { await self.usageManager.loadInitialData() }
         }
     }
 
     private func handleImageSelection(_ item: PhotosPickerItem?) async {
         guard let item else { return }
+
         do {
             guard let data = try await item.loadTransferable(type: Data.self),
                 let uiImage = UIImage(data: data)
@@ -686,16 +682,20 @@ struct ProfileView: View {
                 )
                 return
             }
+
             localAvatarPreview = Image(uiImage: uiImage)
             firebaseService.isUploadingPhoto = true
             firebaseService.avatarUploadError = nil
+
             let newURL = try await firebaseService.uploadAvatar(image: uiImage)
+
             firebaseService.isUploadingPhoto = false
             localAvatarPreview = nil
             alertMessage = AlertMessage(
                 title: "Success",
                 message: "Profile photo updated!"
             )
+
             print("[ProfileView] Avatar upload success — URL: \(newURL)")
         } catch {
             firebaseService.isUploadingPhoto = false
