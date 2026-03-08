@@ -17,7 +17,6 @@ struct HomeView: View {
     @State private var navigateToPractice = false
     @State private var navigateToNotification = false
 
-    // Notification badge count
     @State private var unreadCount = 0
 
     private var displayName: String {
@@ -67,7 +66,6 @@ struct HomeView: View {
             await loadData()
             await refreshUnreadCount()
         }
-        // Lang nghe push notification de cap nhat badge
         .onReceive(
             NotificationCenter.default.publisher(
                 for: .didReceivePushNotification
@@ -83,7 +81,6 @@ struct HomeView: View {
         .navigationDestination(isPresented: $navigateToTips) { TipsView() }
         .navigationDestination(isPresented: $navigateToNotification) {
             NotificationView()
-                // Reset badge khi user mo notification
                 .onAppear { Task { await refreshUnreadCount() } }
         }
     }
@@ -136,6 +133,7 @@ struct HomeView: View {
                     }
                 }
             }
+            // Semantic color: orange represents score/rating
             .tint(.orange)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -145,6 +143,7 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "lightbulb")
             }
+            // Semantic color: yellow represents tips/ideas
             .tint(.yellow)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -162,15 +161,18 @@ struct HomeView: View {
                                         width: unreadCount > 9 ? 16 : 12,
                                         height: unreadCount > 9 ? 16 : 12
                                     )
-                                Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(.white)
+                                Text(
+                                    unreadCount > 99 ? "99+" : "\(unreadCount)"
+                                )
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
                             }
                             .offset(x: 6, y: -4)
                         }
                     }
             }
-            .tint(.primary)
+            // CHANGED: .primary -> BrandColor.primary for brand consistency
+            .tint(BrandColor.primary)
         }
     }
 }
@@ -181,9 +183,14 @@ struct HomeGreetingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Hello, \(displayName)!")
-                .font(.title2.bold())
+            // CHANGED: split Text to highlight displayName with BrandColor.primary
+            (Text("Hello, ")
                 .foregroundStyle(.primary)
+                + Text(displayName)
+                .foregroundStyle(BrandColor.primary)
+                + Text("!")
+                .foregroundStyle(.primary))
+                .font(.title2.bold())
             Text("Ready to practice today?")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -295,7 +302,8 @@ struct ActivityStackCard: View {
     }
 
     private var taskBadgeColor: Color {
-        question?.taskType == "task1" ? .blue : .purple
+        // CHANGED: task1 uses BrandColor.primary instead of .blue
+        question?.taskType == "task1" ? BrandColor.primary : .purple
     }
 
     private var difficultyColor: Color {
@@ -596,7 +604,9 @@ struct StatusBadgeView: View {
 struct LoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
+            // CHANGED: tint ProgressView with BrandColor.primary
             ProgressView()
+                .tint(BrandColor.primary)
             Text("Loading your activity...")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
@@ -621,6 +631,7 @@ struct ErrorBannerView: View {
             Spacer()
             Button("Retry", action: onRetry)
                 .font(.subheadline.weight(.semibold))
+                .tint(BrandColor.primary)
         }
         .padding()
         .glassEffect(in: .rect(cornerRadius: 12))

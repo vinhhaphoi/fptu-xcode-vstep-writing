@@ -483,7 +483,7 @@ struct UserProgressInsights: Codable {
         var icon: String {
             switch self {
             case .improving: return "arrow.up.right.circle.fill"
-            case .stable:    return "arrow.right.circle.fill"
+            case .stable: return "arrow.right.circle.fill"
             case .declining: return "arrow.down.right.circle.fill"
             }
         }
@@ -491,7 +491,7 @@ struct UserProgressInsights: Codable {
         var color: Color {
             switch self {
             case .improving: return .green
-            case .stable:    return BrandColor.medium
+            case .stable: return BrandColor.medium
             case .declining: return .red
             }
         }
@@ -499,7 +499,7 @@ struct UserProgressInsights: Codable {
         var label: String {
             switch self {
             case .improving: return "Improving"
-            case .stable:    return "Stable"
+            case .stable: return "Stable"
             case .declining: return "Declining"
             }
         }
@@ -519,6 +519,17 @@ struct AnalyzeProgressResponse: Codable {
     let usedCount: Int?
     let weeklyLimit: Int?
     let weekKey: String?
+}
+
+struct AnalyticsProgress: Equatable {
+    let step: Int
+    let total: Int
+    let label: String
+
+    var percentage: Double {
+        guard total > 0 else { return 0 }
+        return Double(step) / Double(total)
+    }
 }
 
 // MARK: - VSTEP Rank Model

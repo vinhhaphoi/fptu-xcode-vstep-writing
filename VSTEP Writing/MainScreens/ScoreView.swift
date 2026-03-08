@@ -5,15 +5,16 @@ import FirebaseFunctions
 import SwiftUI
 
 // MARK: - AnalyticsManager
-
+// MARK: - AnalyticsManager
 @MainActor
 final class AnalyticsManager: ObservableObject {
-
     @Published var insights: UserProgressInsights? = nil
-    @Published var isFetching = false
+    @Published var isFetching: Bool = false
     @Published var errorMessage: String? = nil
     @Published var isCached: Bool = false
     @Published var cachedAt: String? = nil
+    // NEW: Real-time progress tracking from Cloud Function
+    @Published var analysisProgress: AnalyticsProgress? = nil
     @Published var autoRefresh: Bool = false {
         didSet {
             guard oldValue != autoRefresh else { return }
@@ -21,30 +22,61 @@ final class AnalyticsManager: ObservableObject {
         }
     }
 
-    /// Prevents concurrent calls to the cloud function
     private var activeFetchTask: Task<Void, Never>? = nil
-
+    // NEW: Firestore listener for progress updates
+    private var progressListener: ListenerRegistration? = nil
     private lazy var functions = Functions.functions(region: "asia-southeast1")
     private let firestore = Firestore.firestore()
 
     init() {
-        Task {
-            await loadAutoRefreshPreference()
-            await loadCachedInsights()
+        Task { await loadAutoRefreshPreference() }
+        Task { await loadCachedInsights() }
+    }
+
+    // NEW: Start listening to progress field in insights document
+    private func startProgressListener() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let ref =
+            firestore
+            .collection("users").document(uid)
+            .collection("analytics").document("insights")
+
+        progressListener = ref.addSnapshotListener { [weak self] snapshot, _ in
+            guard let self = self else { return }
+            guard
+                let data = snapshot?.data(),
+                let progressMap = data["progress"] as? [String: Any],
+                let step = progressMap["step"] as? Int,
+                let total = progressMap["total"] as? Int,
+                let label = progressMap["label"] as? String
+            else {
+                Task { @MainActor in self.analysisProgress = nil }
+                return
+            }
+            Task { @MainActor in
+                self.analysisProgress = AnalyticsProgress(
+                    step: step,
+                    total: total,
+                    label: label
+                )
+            }
         }
     }
 
-    // MARK: - Load Insights (delegates quota check to AIUsageManager)
+    // NEW: Stop listener and clear progress state
+    private func stopProgressListener() {
+        progressListener?.remove()
+        progressListener = nil
+        analysisProgress = nil
+    }
 
+    // MARK: - Load Insights
     func loadInsights(forceRefresh: Bool = false, store: StoreKitManager) {
-        // Prevent concurrent calls — cancel-safe
         guard !isFetching, activeFetchTask == nil else { return }
-
-        // Client-side quota guard before network call
         if forceRefresh {
             let check = AIUsageManager.shared.canRefreshInsights(store: store)
             guard check.isAllowed else {
-                errorMessage = "quota_exceeded"
+                errorMessage = "quotaexceeded"
                 return
             }
         }
@@ -52,10 +84,15 @@ final class AnalyticsManager: ObservableObject {
         isFetching = true
         errorMessage = nil
 
+        // Start listening before calling Cloud Function
+        startProgressListener()
+
         activeFetchTask = Task {
             defer {
                 self.isFetching = false
                 self.activeFetchTask = nil
+                // Always stop listener on completion or failure
+                self.stopProgressListener()
             }
             do {
                 let data: [String: Any] = ["forceRefresh": forceRefresh]
@@ -63,11 +100,9 @@ final class AnalyticsManager: ObservableObject {
                     try await functions
                     .httpsCallable("analyzeUserProgress")
                     .call(data)
-
                 guard let resultDict = result.data as? [String: Any] else {
                     throw NSError(domain: "AnalyticsManager", code: -1)
                 }
-
                 let jsonData = try JSONSerialization.data(
                     withJSONObject: resultDict
                 )
@@ -75,31 +110,26 @@ final class AnalyticsManager: ObservableObject {
                     AnalyzeProgressResponse.self,
                     from: jsonData
                 )
-
                 self.insights = response.insights
                 self.isCached = response.cached
                 self.cachedAt = response.updatedAt
-
-                // Record usage only when Gemini returned fresh result
                 if !response.cached {
                     await AIUsageManager.shared.recordInsightRefresh()
                 }
-
             } catch let error as NSError {
                 let code = FunctionsErrorCode(rawValue: error.code)
                 switch code {
                 case .failedPrecondition:
-                    self.errorMessage = "need_more_submissions"
-                case .resourceExhausted: self.errorMessage = "quota_exceeded"
-                case .permissionDenied: self.errorMessage = "not_subscribed"
+                    self.errorMessage = "needmoresubmissions"
+                case .resourceExhausted: self.errorMessage = "quotaexceeded"
+                case .permissionDenied: self.errorMessage = "notsubscribed"
                 default: self.errorMessage = error.localizedDescription
                 }
             }
         }
     }
 
-    // MARK: - AutoRefresh Preference (synced to Firestore)
-
+    // MARK: - AutoRefresh Preference synced to Firestore
     private func saveAutoRefreshPreference() {
         guard let uid = Auth.auth().currentUser?.uid else { return }
         firestore
@@ -119,13 +149,12 @@ final class AnalyticsManager: ObservableObject {
     }
 
     // MARK: - Load Cached Insights from Firestore
-
     func loadCachedInsights() async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
         let snap =
             try? await firestore
             .collection("users").document(uid)
-            .collection("analytics").document("insightUsage")
+            .collection("analytics").document("insights")
             .getDocument()
 
         guard let data = snap?.data(),
@@ -143,7 +172,6 @@ final class AnalyticsManager: ObservableObject {
             self.insights = decoded
             self.isCached = data["cached"] as? Bool ?? true
 
-            // Read updatedAt from insightUsage document
             if let ts = data["updatedAt"] as? Timestamp {
                 let formatter = ISO8601DateFormatter()
                 self.cachedAt = formatter.string(from: ts.dateValue())
@@ -151,7 +179,7 @@ final class AnalyticsManager: ObservableObject {
                 self.cachedAt = tsStr
             }
         } catch {
-            // Cache decode failed — not critical, user can refresh manually
+            // Cache decode failed - not critical, user can refresh manually
         }
     }
 }
@@ -974,19 +1002,41 @@ private struct AIInsightsSection: View {
     // MARK: - Skeleton
 
     private var insightsSkeleton: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(BrandColor.light)
-                Text("Analyzing your progress…")
+                Text("Analyzing your progress")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(BrandColor.primary)
                 Spacer()
                 ProgressView().scaleEffect(0.7)
             }
-            ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.secondary.opacity(0.15))
-                    .frame(height: 12)
+
+            if let progress = manager.analysisProgress {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(progress.label)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(progress.step)/\(progress.total)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                    ProgressView(value: progress.percentage)
+                        .tint(BrandColor.primary)
+                        .animation(
+                            .easeInOut(duration: 0.4),
+                            value: progress.percentage
+                        )
+                }
+            } else {
+                // Skeleton placeholders khi chua co progress
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(height: 12)
+                }
             }
         }
         .padding()
