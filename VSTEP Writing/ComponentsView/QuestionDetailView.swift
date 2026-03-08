@@ -340,12 +340,14 @@ struct QuestionDetailView: View {
             // AI grading info banner
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(BrandColor.light)
+                    .foregroundStyle(BrandColor.primary)  // doi tu .blue
                     .font(.subheadline)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("AI-Powered Grading")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(BrandColor.light)
+                        .foregroundStyle(BrandColor.primary)  // doi tu .blue
+
                     Text(
                         "Your essay will be automatically graded by Gemini AI based on VSTEP rubrics. Results typically appear within 10–30 seconds."
                     )
@@ -356,10 +358,7 @@ struct QuestionDetailView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(
-                .regular.tint(BrandColor.muted),
-                in: .rect(cornerRadius: 12)
-            )
+            .glassEffect(in: .rect(cornerRadius: 16))
 
             // Word count header
             HStack {

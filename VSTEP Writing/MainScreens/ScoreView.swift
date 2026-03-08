@@ -1,10 +1,10 @@
+import Charts
 import Combine
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import SwiftUI
 
-// MARK: - AnalyticsManager
 // MARK: - AnalyticsManager
 @MainActor
 final class AnalyticsManager: ObservableObject {
@@ -151,6 +151,8 @@ final class AnalyticsManager: ObservableObject {
     // MARK: - Load Cached Insights from Firestore
     func loadCachedInsights() async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
+
+        // FIX: read from "insights" document, not "insightUsage"
         let snap =
             try? await firestore
             .collection("users").document(uid)
@@ -185,7 +187,6 @@ final class AnalyticsManager: ObservableObject {
 }
 
 // MARK: - QuestionAttemptGroup
-
 struct QuestionAttemptGroup: Identifiable, Hashable {
     var id: String { questionId }
     let questionId: String
@@ -198,7 +199,9 @@ struct QuestionAttemptGroup: Identifiable, Hashable {
         lhs.questionId == rhs.questionId
     }
 
-    func hash(into hasher: inout Hasher) { hasher.combine(questionId) }
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(questionId)
+    }
 
     var latestAttempt: UserSubmission { attempts[0] }
     var previousAttempts: [UserSubmission] { Array(attempts.dropFirst()) }
@@ -207,7 +210,6 @@ struct QuestionAttemptGroup: Identifiable, Hashable {
 }
 
 // MARK: - Chart Data Point
-
 struct ChartDataPoint: Identifiable {
     var id: String { submission.id ?? UUID().uuidString }
     let submission: UserSubmission
@@ -215,7 +217,6 @@ struct ChartDataPoint: Identifiable {
 
     var score: Double { submission.score ?? 0 }
     var date: Date { submission.submittedAt }
-
     var dotColor: Color {
         switch taskType {
         case "task1": return BrandColor.light
@@ -226,9 +227,7 @@ struct ChartDataPoint: Identifiable {
 }
 
 // MARK: - ScoreView
-
 struct ScoreView: View {
-
     @StateObject private var firebaseService = FirebaseService.shared
     @StateObject private var analyticsManager = AnalyticsManager()
     @Environment(StoreKitManager.self) private var store
@@ -244,7 +243,7 @@ struct ScoreView: View {
     }
 
     private var groupedByQuestion: [QuestionAttemptGroup] {
-        Dictionary(grouping: submissions) { $0.questionId }
+        Dictionary(grouping: submissions, by: \.questionId)
             .map { questionId, attempts in
                 QuestionAttemptGroup(
                     questionId: questionId,
@@ -260,11 +259,11 @@ struct ScoreView: View {
     }
 
     private var gradedSubmissions: [UserSubmission] {
-        submissions.filter { $0.score != nil }
-            .sorted { $0.submittedAt < $1.submittedAt }
+        submissions.filter { $0.score != nil }.sorted {
+            $0.submittedAt < $1.submittedAt
+        }
     }
 
-    /// Chart data points with task type info
     private var chartDataPoints: [ChartDataPoint] {
         gradedSubmissions.map { sub in
             ChartDataPoint(
@@ -309,14 +308,13 @@ struct ScoreView: View {
                     avg: $0.value.reduce(0, +) / Double($0.value.count)
                 )
             }
-            .sorted { $0.avg < $1.avg }
+            .sorted { $0.avg > $1.avg }
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-
-                // [1] Score header — always visible
+                // 1. Score header always visible
                 ScoreHeaderView(
                     averageScore: averageScore,
                     totalSubmissions: submissions.count,
@@ -325,39 +323,35 @@ struct ScoreView: View {
                 )
 
                 if isLoading {
-                    ProgressView("Loading scores…")
+                    ProgressView("Loading scores")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
-
                 } else if let error = errorMessage {
                     ErrorBannerView(message: error) {
                         Task { await loadSubmissions() }
                     }
-
                 } else if groupedByQuestion.isEmpty {
                     ScoreEmptyView()
-
                 } else {
-
-                    // [2] All submissions list — moved up
+                    // 2. All submissions list
                     AllSubmissionsSection(
                         groups: groupedByQuestion,
                         onNavigate: { selectedGroup = $0 }
                     )
 
-                    // [3] Score trend chart — between submissions and insights
-                    if chartDataPoints.count >= 2 {
+                    // 3. Score trend chart
+                    if chartDataPoints.count > 2 {
                         ScoreTrendSection(dataPoints: chartDataPoints)
                     }
 
-                    // [4] Criteria breakdown
+                    // 4. Criteria breakdown
                     if !criteriaAverages.isEmpty {
                         CriteriaBreakdownSection(
                             criteriaAverages: criteriaAverages
                         )
                     }
 
-                    // [5] AI Insights — last
+                    // 5. AI Insights
                     AIInsightsSection(
                         manager: analyticsManager,
                         isSubscriber: isSubscriber,
@@ -407,11 +401,11 @@ struct ScoreView: View {
     }
 }
 
-// MARK: - Score Trend Section (Enhanced)
-
+// MARK: - Score Trend Section
+// MARK: - Score Trend Section
 private struct ScoreTrendSection: View {
-
     let dataPoints: [ChartDataPoint]
+
     @State private var selectedIndex: Int? = nil
 
     private let yMarks: [Double] = [0, 2, 4, 6, 8, 10]
@@ -420,6 +414,7 @@ private struct ScoreTrendSection: View {
     private let rightPad: CGFloat = 12
     private let topPad: CGFloat = 24
     private let bottomPad: CGFloat = 12
+
     private var hasTask1: Bool {
         dataPoints.contains { $0.taskType == "task1" }
     }
@@ -434,7 +429,7 @@ private struct ScoreTrendSection: View {
                 icon: "chart.line.uptrend.xyaxis"
             )
 
-            // Chart
+            // FIX: Remove Chart {} wrapper - use ZStack directly with Canvas
             ZStack(alignment: .topLeading) {
                 // Y-axis labels
                 GeometryReader { geo in
@@ -442,19 +437,17 @@ private struct ScoreTrendSection: View {
                     ForEach(yMarks, id: \.self) { mark in
                         let yPos = topPad + drawH * (1 - mark / 10)
                         Text("\(Int(mark))")
-                            .font(
-                                .system(size: 10, weight: .medium)
-                                    .monospacedDigit()
-                            )
+                            .font(.system(size: 10, weight: .medium))
+                            .monospacedDigit()
                             .foregroundStyle(.tertiary)
                             .position(x: 10, y: yPos)
                     }
                 }
 
-                // Canvas: grid + line + area + dots
+                // Canvas: grid lines, area, line, dots
                 Canvas { context, size in
                     let scores = dataPoints.map(\.score)
-                    guard scores.count >= 2 else { return }
+                    guard scores.count > 1 else { return }
 
                     let w = size.width
                     let h = size.height
@@ -465,13 +458,13 @@ private struct ScoreTrendSection: View {
                     func point(index: Int, score: Double) -> CGPoint {
                         CGPoint(
                             x: leftPad + CGFloat(index) * xStep,
-                            y: topPad + drawH * (1 - CGFloat(score / 10))
+                            y: topPad + drawH * (1 - CGFloat(score) / 10)
                         )
                     }
 
                     // Horizontal grid lines
                     for mark in yMarks {
-                        let y = topPad + drawH * (1 - CGFloat(mark / 10))
+                        let y = topPad + drawH * (1 - CGFloat(mark) / 10)
                         var gridLine = Path()
                         gridLine.move(to: CGPoint(x: leftPad, y: y))
                         gridLine.addLine(to: CGPoint(x: w - rightPad, y: y))
@@ -523,14 +516,13 @@ private struct ScoreTrendSection: View {
                         )
                     )
 
-                    // Dots — colored by task type
+                    // Dots colored by task type
                     for (i, dp) in dataPoints.enumerated() {
                         let p = point(index: i, score: dp.score)
                         let isSelected = selectedIndex == i
                         let dotSize: CGFloat = isSelected ? 10 : 7
                         let glowSize: CGFloat = isSelected ? 16 : 12
 
-                        // Outer glow
                         context.fill(
                             Path(
                                 ellipseIn: CGRect(
@@ -544,8 +536,6 @@ private struct ScoreTrendSection: View {
                                 dp.dotColor.opacity(isSelected ? 0.35 : 0.2)
                             )
                         )
-
-                        // Inner dot
                         context.fill(
                             Path(
                                 ellipseIn: CGRect(
@@ -564,21 +554,17 @@ private struct ScoreTrendSection: View {
                         let dp = dataPoints[idx]
                         let p = point(index: idx, score: dp.score)
                         let text = Text(String(format: "%.1f", dp.score))
-                            .font(
-                                .system(size: 12, weight: .bold)
-                                    .monospacedDigit()
-                            )
+                            .font(.system(size: 12, weight: .bold))
+                            .monospacedDigit()
                             .foregroundColor(.white)
                         let resolved = context.resolve(text)
                         let textSize = resolved.measure(
                             in: CGSize(width: 60, height: 30)
                         )
-
                         let labelW = textSize.width + 12
                         let labelH = textSize.height + 8
                         let labelY = p.y - labelH - 10
 
-                        // Bubble background
                         let bubbleRect = CGRect(
                             x: p.x - labelW / 2,
                             y: labelY,
@@ -590,7 +576,6 @@ private struct ScoreTrendSection: View {
                             with: .color(dp.dotColor)
                         )
 
-                        // Arrow
                         var arrow = Path()
                         arrow.move(to: CGPoint(x: p.x - 4, y: labelY + labelH))
                         arrow.addLine(
@@ -602,7 +587,6 @@ private struct ScoreTrendSection: View {
                         arrow.closeSubpath()
                         context.fill(arrow, with: .color(dp.dotColor))
 
-                        // Text
                         context.draw(
                             resolved,
                             at: CGPoint(x: p.x, y: labelY + labelH / 2),
@@ -618,21 +602,20 @@ private struct ScoreTrendSection: View {
                         .contentShape(Rectangle())
                         .onTapGesture { location in
                             let count = dataPoints.count
-                            guard count >= 2 else { return }
+                            guard count > 1 else { return }
                             let drawW = geo.size.width - leftPad - rightPad
                             let xStep = drawW / CGFloat(count - 1)
                             let relX = location.x - leftPad
-                            let idx = Int(round(relX / xStep))
+                            let idx = Int((relX / xStep).rounded())
                             let clampedIdx = max(0, min(count - 1, idx))
                             withAnimation(.easeOut(duration: 0.15)) {
-                                if selectedIndex == clampedIdx {
-                                    selectedIndex = nil
-                                } else {
-                                    selectedIndex = clampedIdx
-                                }
+                                selectedIndex =
+                                    selectedIndex == clampedIdx
+                                    ? nil : clampedIdx
                             }
                         }
                 }
+                .frame(height: chartHeight)
             }
 
             // X-axis labels
@@ -648,19 +631,13 @@ private struct ScoreTrendSection: View {
                 if dataPoints.count > 2,
                     let mid = dataPoints[safe: dataPoints.count / 2]
                 {
-                    Text(
-                        mid.date,
-                        format: .dateTime.day().month(.abbreviated)
-                    )
-                    .font(.caption2).foregroundStyle(.secondary)
+                    Text(mid.date, format: .dateTime.day().month(.abbreviated))
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 if let last = dataPoints.last {
-                    Text(
-                        last.date,
-                        format: .dateTime.day().month(.abbreviated)
-                    )
-                    .font(.caption2).foregroundStyle(.secondary)
+                    Text(last.date, format: .dateTime.day().month(.abbreviated))
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 8)
@@ -687,20 +664,14 @@ private struct ScoreTrendSection: View {
 
     private func legendItem(color: Color, label: String) -> some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
         }
     }
 }
 
 // MARK: - Criteria Breakdown Section
-
 private struct CriteriaBreakdownSection: View {
-
     let criteriaAverages: [(name: String, avg: Double)]
 
     var body: some View {
@@ -718,7 +689,8 @@ private struct CriteriaBreakdownSection: View {
                             .foregroundStyle(.primary)
                         Spacer()
                         Text(String(format: "%.1f", item.avg))
-                            .font(.subheadline.bold().monospacedDigit())
+                            .font(.subheadline.bold())
+                            .monospacedDigit()
                             .foregroundStyle(criteriaColor(item.avg))
                     }
 
@@ -767,20 +739,25 @@ private struct CriteriaBreakdownSection: View {
 }
 
 // MARK: - AI Insights Section
-
 private struct AIInsightsSection: View {
-
     @ObservedObject var manager: AnalyticsManager
     let isSubscriber: Bool
     let gradedCount: Int
     let store: StoreKitManager
 
+    // Detect color scheme to fix dark mode glass tint contrast
+    @Environment(\.colorScheme) private var colorScheme
+
     private var remaining: Int {
         AIUsageManager.shared.remainingInsightRefreshes(store: store)
     }
-
     private var weeklyLimit: Int {
         AIUsageManager.shared.limits(for: store).insightRefreshesPerWeek
+    }
+
+    // Adaptive tint - clear in dark mode to avoid bright background over text
+    private var adaptiveGlassTint: Color {
+        colorScheme == .dark ? Color.clear : BrandColor.muted
     }
 
     var body: some View {
@@ -791,29 +768,29 @@ private struct AIInsightsSection: View {
                 insightsNotEnoughCard
             } else if manager.isFetching {
                 insightsSkeleton
-            } else if manager.errorMessage == "need_more_submissions" {
+            } else if manager.errorMessage == "needmoresubmissions" {
                 insightsNotEnoughCard
-            } else if manager.errorMessage == "quota_exceeded" {
+            } else if manager.errorMessage == "quotaexceeded" {
                 quotaExhaustedCard
             } else if let error = manager.errorMessage {
                 insightsErrorCard(message: error)
             } else if let insights = manager.insights {
                 insightsCard(insights: insights)
             } else {
-                // No auto-trigger — show a manual load button instead
                 insightsReadyCard
             }
         }
         .padding(.horizontal)
     }
 
-    // MARK: - Ready Card (manual trigger)
-
+    // MARK: - Ready Card
     private var insightsReadyCard: some View {
         VStack(spacing: 14) {
             HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(BrandColor.muted).frame(width: 48, height: 48)
+                    Circle()
+                        .fill(BrandColor.muted)
+                        .frame(width: 48, height: 48)
                     Image(systemName: "sparkles")
                         .font(.title3)
                         .foregroundStyle(BrandColor.primary)
@@ -834,10 +811,8 @@ private struct AIInsightsSection: View {
                 manager.loadInsights(store: store)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.subheadline)
-                    Text("Analyze My Progress")
-                        .font(.subheadline.bold())
+                    Image(systemName: "sparkles").font(.subheadline)
+                    Text("Analyze My Progress").font(.subheadline.bold())
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -846,23 +821,20 @@ private struct AIInsightsSection: View {
                 .clipShape(.rect(cornerRadius: 10))
             }
 
-            // Quota info
             HStack(spacing: 4) {
-                Image(systemName: "arrow.clockwise.circle")
-                    .font(.caption)
+                Image(systemName: "arrow.clockwise.circle").font(.caption)
                 Text(
                     "\(remaining)/\(weeklyLimit) refreshes available this week"
                 )
                 .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
         }
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
     // MARK: - Locked Card
-
     private var insightsLockedCard: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -876,7 +848,7 @@ private struct AIInsightsSection: View {
                     Text("AI Progress Insights")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(BrandColor.primary)
-                    Text("Advanced+")
+                    Text("Advanced")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
@@ -905,8 +877,7 @@ private struct AIInsightsSection: View {
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    // MARK: - Not Enough Submissions
-
+    // MARK: - Not Enough Card
     private var insightsNotEnoughCard: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -931,8 +902,7 @@ private struct AIInsightsSection: View {
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    // MARK: - Quota Exhausted
-
+    // MARK: - Quota Exhausted Card
     private var quotaExhaustedCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
@@ -967,20 +937,19 @@ private struct AIInsightsSection: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
 
-            // Show stale insights if still in memory
             if let insights = manager.insights {
                 Divider()
                 staleInsightsBanner
                 insightsContent(insights: insights)
+                Divider()
+                autoRefreshToggle
             }
-
-            Divider()
-            autoRefreshToggle
         }
         .padding()
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
+    // MARK: - Stale Insights Banner
     private var staleInsightsBanner: some View {
         HStack(spacing: 6) {
             Image(systemName: "clock.badge.exclamationmark")
@@ -1000,7 +969,6 @@ private struct AIInsightsSection: View {
     }
 
     // MARK: - Skeleton
-
     private var insightsSkeleton: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
@@ -1012,6 +980,7 @@ private struct AIInsightsSection: View {
                 ProgressView().scaleEffect(0.7)
             }
 
+            // Real-time progress from Firestore listener
             if let progress = manager.analysisProgress {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -1031,7 +1000,7 @@ private struct AIInsightsSection: View {
                         )
                 }
             } else {
-                // Skeleton placeholders khi chua co progress
+                // Skeleton placeholders while waiting for first progress update
                 ForEach(0..<3, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.secondary.opacity(0.15))
@@ -1044,7 +1013,6 @@ private struct AIInsightsSection: View {
     }
 
     // MARK: - Error Card
-
     private func insightsErrorCard(message: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -1062,10 +1030,8 @@ private struct AIInsightsSection: View {
     }
 
     // MARK: - Full Insights Card
-
     private func insightsCard(insights: UserProgressInsights) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").foregroundStyle(BrandColor.light)
                 Text("AI Progress Insights")
@@ -1089,21 +1055,20 @@ private struct AIInsightsSection: View {
                 // Weekly quota badge
                 quotaBadge
 
-                // Refresh button — disabled when limit reached
+                // Refresh button
                 Button {
                     manager.loadInsights(forceRefresh: true, store: store)
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption)
                         .foregroundStyle(
-                            remaining == 0 ? Color.secondary : BrandColor.medium
+                            remaining > 0 ? BrandColor.medium : Color.secondary
                         )
                 }
-                .disabled(remaining == 0)
+                .disabled(remaining <= 0)
             }
 
             insightsContent(insights: insights)
-
             Divider()
             autoRefreshToggle
 
@@ -1111,7 +1076,7 @@ private struct AIInsightsSection: View {
             if manager.isCached, let ts = manager.cachedAt {
                 HStack(spacing: 4) {
                     Image(systemName: "clock").font(.caption2)
-                    Text("Last analyzed: \(formattedDate(ts))").font(.caption2)
+                    Text("Last analyzed \(formattedDate(ts))").font(.caption2)
                 }
                 .foregroundStyle(.tertiary)
             }
@@ -1120,27 +1085,24 @@ private struct AIInsightsSection: View {
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    // MARK: - Insights Content (reused in card + stale state)
-
+    // MARK: - Insights Content (reused in card and stale state)
     private func insightsContent(insights: UserProgressInsights) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-
+            // Overall insight box
             Text(insights.overallInsight)
                 .font(.body)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // FIX: adaptive tint to prevent bright overlay in dark mode
                 .glassEffect(
-                    .regular.tint(BrandColor.muted),
+                    .regular.tint(adaptiveGlassTint),
                     in: .rect(cornerRadius: 10)
                 )
 
             Divider()
 
-            // ── Redesigned Strengths & Weaknesses ──
-
-            // Strengths
             insightCardList(
                 title: "Strengths",
                 count: insights.strengths.count,
@@ -1150,7 +1112,6 @@ private struct AIInsightsSection: View {
                 items: insights.strengths
             )
 
-            // Weaknesses
             insightCardList(
                 title: "Weaknesses",
                 count: insights.weaknesses.count,
@@ -1183,6 +1144,7 @@ private struct AIInsightsSection: View {
 
             Divider()
 
+            // Next goal box
             HStack(spacing: 10) {
                 Image(systemName: "target")
                     .foregroundStyle(BrandColor.primary)
@@ -1199,15 +1161,15 @@ private struct AIInsightsSection: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // FIX: adaptive tint to prevent bright overlay in dark mode
             .glassEffect(
-                .regular.tint(BrandColor.muted),
+                .regular.tint(adaptiveGlassTint),
                 in: .rect(cornerRadius: 10)
             )
         }
     }
 
     // MARK: - Insight Card List (Strengths / Weaknesses)
-
     private func insightCardList(
         title: String,
         count: Int,
@@ -1217,7 +1179,6 @@ private struct AIInsightsSection: View {
         items: [String]
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Section header with count badge
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.subheadline)
@@ -1225,13 +1186,12 @@ private struct AIInsightsSection: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(accentColor)
-                Text("· \(count)")
+                Text("\(count)")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(accentColor.opacity(0.7))
                 Spacer()
             }
 
-            // Card rows
             VStack(spacing: 6) {
                 ForEach(items, id: \.self) { item in
                     HStack(alignment: .top, spacing: 10) {
@@ -1241,7 +1201,6 @@ private struct AIInsightsSection: View {
                             .frame(width: 24, height: 24)
                             .background(accentColor.opacity(0.12))
                             .clipShape(Circle())
-
                         Text(item)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
@@ -1258,22 +1217,21 @@ private struct AIInsightsSection: View {
     }
 
     // MARK: - Quota Badge
-
     private var quotaBadge: some View {
         HStack(spacing: 3) {
-            Image(systemName: "arrow.clockwise.circle")
-                .font(.caption2)
+            Image(systemName: "arrow.clockwise.circle").font(.caption2)
             Text("\(remaining)/\(weeklyLimit)")
                 .font(.caption2.monospacedDigit())
+                .foregroundStyle(
+                    remaining > 0 ? BrandColor.medium : Color.secondary
+                )
         }
-        .foregroundStyle(remaining == 0 ? Color.secondary : BrandColor.medium)
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .glassEffect(in: .capsule)
     }
 
     // MARK: - Auto Refresh Toggle
-
     private var autoRefreshToggle: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
@@ -1290,14 +1248,14 @@ private struct AIInsightsSection: View {
                 .tint(BrandColor.primary)
         }
         .padding(12)
+        // FIX: adaptive tint to prevent bright overlay in dark mode
         .glassEffect(
-            .regular.tint(BrandColor.muted),
+            .regular.tint(adaptiveGlassTint),
             in: .rect(cornerRadius: 10)
         )
     }
 
     // MARK: - Helpers
-
     private func formattedDate(_ iso: String) -> String {
         let f = ISO8601DateFormatter()
         guard let date = f.date(from: iso) else { return iso }
@@ -1308,9 +1266,7 @@ private struct AIInsightsSection: View {
 }
 
 // MARK: - All Submissions Section
-
 private struct AllSubmissionsSection: View {
-
     let groups: [QuestionAttemptGroup]
     let onNavigate: (QuestionAttemptGroup) -> Void
 
@@ -1333,7 +1289,6 @@ private struct AllSubmissionsSection: View {
 }
 
 // MARK: - Section Header
-
 private struct SectionHeader: View {
     let title: String
     let icon: String
@@ -1346,11 +1301,10 @@ private struct SectionHeader: View {
 }
 
 // MARK: - Question Attempt Card
-
 struct QuestionAttemptCard: View {
-
     let group: QuestionAttemptGroup
     let onNavigate: () -> Void
+
     @State private var isExpanded = false
 
     private var taskColor: Color {
@@ -1408,10 +1362,10 @@ struct QuestionAttemptCard: View {
                         )
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 4)
-                        .padding(.vertical, 12)
-                        .padding(.trailing, 4)
                     }
+                    .padding(.leading, 4)
+                    .padding(.vertical, 12)
+                    .padding(.trailing, 4)
                     .buttonStyle(.plain)
                 }
             }
@@ -1442,9 +1396,7 @@ struct QuestionAttemptCard: View {
 }
 
 // MARK: - Previous Attempt Row
-
 struct PreviousAttemptRow: View {
-
     let attemptNumber: Int
     let submission: UserSubmission
 
@@ -1454,7 +1406,6 @@ struct PreviousAttemptRow: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
                 .frame(width: 32, alignment: .center)
-
             Text(
                 submission.submittedAt,
                 format: .dateTime.day().month(.abbreviated).year().hour()
@@ -1462,7 +1413,6 @@ struct PreviousAttemptRow: View {
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
-
             Spacer()
             AttemptScoreView(submission: submission, compact: true)
         }
@@ -1473,9 +1423,7 @@ struct PreviousAttemptRow: View {
 }
 
 // MARK: - Attempt Score View
-
 struct AttemptScoreView: View {
-
     let submission: UserSubmission
     var compact: Bool = false
 
@@ -1508,7 +1456,7 @@ struct AttemptScoreView: View {
                             : .title3.bold().monospacedDigit()
                     )
                     .foregroundStyle(scoreColor)
-                Text("/ 10")
+                Text("/10")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -1526,7 +1474,6 @@ struct AttemptScoreView: View {
 }
 
 // MARK: - Badge Label
-
 struct BadgeLabel: View {
     let text: String
     let color: Color
@@ -1543,9 +1490,7 @@ struct BadgeLabel: View {
 }
 
 // MARK: - Score Header View
-
 struct ScoreHeaderView: View {
-
     let averageScore: Double?
     let totalSubmissions: Int
     let task1Count: Int
@@ -1608,7 +1553,6 @@ struct ScoreHeaderView: View {
 }
 
 // MARK: - Stat Chip
-
 struct StatChip: View {
     let icon: String
     let value: String
@@ -1625,7 +1569,6 @@ struct StatChip: View {
 }
 
 // MARK: - Empty State
-
 struct ScoreEmptyView: View {
     var body: some View {
         VStack(spacing: 16) {
@@ -1638,7 +1581,7 @@ struct ScoreEmptyView: View {
             Text("No submissions yet")
                 .font(.headline)
                 .foregroundStyle(BrandColor.primary)
-            Text("Complete your first essay\nto see your score here.")
+            Text("Complete your first essay to see your score here.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -1649,7 +1592,6 @@ struct ScoreEmptyView: View {
 }
 
 // MARK: - Safe subscript helper
-
 extension Array {
     fileprivate subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
