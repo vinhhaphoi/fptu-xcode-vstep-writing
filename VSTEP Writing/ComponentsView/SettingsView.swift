@@ -5,15 +5,13 @@ import UserNotifications
 
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(LanguageManager.self) private var languageManager
     @AppStorage("isDarkMode") private var isDarkMode = false
     @EnvironmentObject var authManager: AuthenticationManager
 
-    // Navigation States
     @State private var navigateToSecurity = false
     @State private var navigateToSubscription = false
     @State private var navigateToEditProfile = false
-
-    // Notification permission state - read from system, not AppStorage
     @State private var isNotificationOn = false
 
     var body: some View {
@@ -27,10 +25,12 @@ struct SettingsView: View {
             subscriptionsButton
                 .padding()
 
+            languageButton
+                .padding()
+
             notificationToggle
                 .padding()
 
-            // Face ID toggle - only show if device supports biometrics
             if BiometricAuthService.shared.isAvailable {
                 faceIDToggle
                     .padding()
@@ -49,16 +49,67 @@ struct SettingsView: View {
             SubscriptionsView()
         }
         .task {
-            // Read actual system permission status on appear
             await syncNotificationStatus()
         }
-        // Re-sync when app comes back to foreground (user may have changed in Settings.app)
         .onReceive(
             NotificationCenter.default.publisher(
                 for: UIApplication.willEnterForegroundNotification
             )
         ) { _ in
             Task { await syncNotificationStatus() }
+        }
+    }
+
+    // MARK: - Language Toggle
+    private var languageButton: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 15) {
+                Text(languageManager.currentLanguage.flag)
+                    .font(.system(size: 26))
+                    .frame(width: 40)
+                    .contentTransition(.symbolEffect(.replace))
+
+                Text("Language")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { languageManager.currentLanguage == .vietnamese },
+                        set: { isVietnamese in
+                            languageManager.setLanguage(
+                                isVietnamese ? .vietnamese : .english
+                            )
+                        }
+                    )
+                )
+                .labelsHidden()
+                .tint(.accentColor)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .glassEffect()
+
+            HStack(spacing: 8) {
+                if languageManager.currentLanguage == .vietnamese {
+                    Text("App is displaying in Vietnamese")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("App is displaying in English")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.leading, 20)
+            .animation(
+                .easeInOut,
+                value: languageManager.currentLanguage.rawValue
+            )
         }
     }
 
@@ -97,15 +148,18 @@ struct SettingsView: View {
             .padding(.vertical, 16)
             .glassEffect()
 
-            // Caption shows current status hint
             HStack(spacing: 8) {
-                Text(
-                    isNotificationOn
-                        ? "You will receive updates and alerts"
-                        : "Enable to receive essay results, assignments and blog updates"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if isNotificationOn {
+                    Text("You will receive updates and alerts")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        "Enable to receive essay results, assignments and blog updates"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
                 Spacer()
             }
             .padding(.leading, 20)
@@ -117,7 +171,8 @@ struct SettingsView: View {
     private var faceIDToggle: some View {
         let biometricName =
             BiometricAuthService.shared.biometricType == .faceID
-            ? "Face ID" : "Touch ID"
+            ? String(localized: "Face ID")
+            : String(localized: "Touch ID")
         let icon =
             BiometricAuthService.shared.biometricType == .faceID
             ? "faceid" : "touchid"
@@ -144,10 +199,8 @@ struct SettingsView: View {
                         get: { authManager.isBiometricLoginEnabled },
                         set: { newValue in
                             if !newValue {
-                                // Turn off synchronously - no async needed
                                 authManager.isBiometricLoginEnabled = false
                             } else {
-                                // Turn on requires biometric verification - must be async
                                 Task { await handleFaceIDToggle(true) }
                             }
                         }
@@ -161,13 +214,19 @@ struct SettingsView: View {
             .glassEffect()
 
             HStack(spacing: 8) {
-                Text(
-                    authManager.isBiometricLoginEnabled
-                        ? "You will be asked to authenticate with \(biometricName) on next launch"
-                        : "Enable to sign in faster without entering your password"
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                if authManager.isBiometricLoginEnabled {
+                    Text(
+                        "You will be asked to authenticate with \(biometricName) on next launch"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        "Enable to sign in faster without entering your password"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
                 Spacer()
             }
             .padding(.leading, 20)
@@ -177,12 +236,10 @@ struct SettingsView: View {
 
     private func handleFaceIDToggle(_ newValue: Bool) async {
         guard newValue else { return }
-
         do {
             try await BiometricAuthService.shared.authenticate()
             authManager.isBiometricLoginEnabled = true
         } catch BiometricError.cancelled {
-            // Toggle already false, nothing to revert
         } catch {
             authManager.isBiometricLoginEnabled = false
         }
@@ -242,7 +299,6 @@ struct SettingsView: View {
                         .foregroundStyle(.primary)
 
                     Spacer()
-
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -280,7 +336,6 @@ struct SettingsView: View {
                         .foregroundStyle(.primary)
 
                     Spacer()
-
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -302,8 +357,6 @@ struct SettingsView: View {
     }
 
     // MARK: - Actions
-
-    // Read current system notification permission and sync toggle state
     private func syncNotificationStatus() async {
         let settings = await UNUserNotificationCenter.current()
             .notificationSettings()
@@ -314,52 +367,38 @@ struct SettingsView: View {
 
     private func handleNotificationToggle(_ newValue: Bool) async {
         if newValue {
-            // User wants to enable - check current permission status
             let settings = await UNUserNotificationCenter.current()
                 .notificationSettings()
-
             switch settings.authorizationStatus {
             case .notDetermined:
-                // First time - request permission
                 let granted =
                     (try? await UNUserNotificationCenter.current()
-                        .requestAuthorization(
-                            options: [.alert, .badge, .sound]
-                        )) ?? false
+                        .requestAuthorization(options: [.alert, .badge, .sound]))
+                    ?? false
                 await MainActor.run {
                     isNotificationOn = granted
                     if granted {
                         UIApplication.shared.registerForRemoteNotifications()
                     }
                 }
-
             case .denied:
-                // Permission was denied - must go to Settings.app to re-enable
                 await MainActor.run {
                     isNotificationOn = false
                     openAppSettings()
                 }
-
             case .authorized, .provisional, .ephemeral:
-                // Already authorized - just reflect the state
-                await MainActor.run {
-                    isNotificationOn = true
-                }
-
+                await MainActor.run { isNotificationOn = true }
             @unknown default:
                 break
             }
         } else {
-            // User wants to disable - iOS does not allow programmatic revoke
-            // Must redirect to Settings.app
             await MainActor.run {
-                isNotificationOn = true  // Revert toggle - cannot disable programmatically
+                isNotificationOn = true
                 openAppSettings()
             }
         }
     }
 
-    // Open iOS Settings.app for this app
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else {
             return

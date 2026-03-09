@@ -33,10 +33,14 @@
 		271207442F5DA1CD0026819A /* FirebaseStorageCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = 271207432F5DA1CD0026819A /* FirebaseStorageCombine-Community */; };
 		2783EF4F2F3579A300F21398 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 2783EF4E2F3579A300F21398 /* GoogleSignIn */; };
 		2783EF512F3579A300F21398 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2783EF502F3579A300F21398 /* GoogleSignInSwift */; };
+		27A09D992F5F05F400C05333 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 27A09D982F5F05F400C05333 /* Localizable.xcstrings */; };
+		27A09D9B2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		272C3AE72F34E4AF0061A8A3 /* VSTEP Writing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "VSTEP Writing.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		27A09D982F5F05F400C05333 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "VSTEP-Writing-InfoPlist.xcstrings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -87,6 +91,8 @@
 		272C3ADE2F34E4AF0061A8A3 = {
 			isa = PBXGroup;
 			children = (
+				27A09D982F5F05F400C05333 /* Localizable.xcstrings */,
+				27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */,
 				272C3AE92F34E4AF0061A8A3 /* VSTEP Writing */,
 				272C3AE82F34E4AF0061A8A3 /* Products */,
 			);
@@ -159,7 +165,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2630;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					272C3AE62F34E4AF0061A8A3 = {
 						CreatedOnToolsVersion = 26.3;
@@ -172,6 +178,7 @@
 			knownRegions = (
 				en,
 				Base,
+				vi,
 			);
 			mainGroup = 272C3ADE2F34E4AF0061A8A3;
 			minimizedProjectReferenceProxies = 1;
@@ -194,6 +201,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				27A09D9B2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings in Resources */,
+				27A09D992F5F05F400C05333 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -215,6 +224,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -269,7 +279,9 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -279,6 +291,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -326,7 +339,9 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;

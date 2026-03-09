@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
+    @State private var languageManager = LanguageManager()
     @EnvironmentObject var authManager: AuthenticationManager
     @AppStorage("isDarkMode") private var isDarkMode = false
 
@@ -19,6 +20,11 @@ struct RootView: View {
                     biometricLockScreen
                 } else {
                     ContentView()
+                        .environment(languageManager)
+                        .environment(
+                            \.locale,
+                            languageManager.currentLanguage.locale
+                        )
                 }
 
             case .unauthenticated:
@@ -29,8 +35,9 @@ struct RootView: View {
         // Auto-trigger Face ID when app becomes active
         .task {
             if authManager.authState == .authenticated,
-               authManager.isBiometricLoginEnabled,
-               !isUnlocked {
+                authManager.isBiometricLoginEnabled,
+                !isUnlocked
+            {
                 await triggerBiometricUnlock()
             }
         }
@@ -100,7 +107,8 @@ struct RootView: View {
     }
 
     private var biometricButtonTitle: String {
-        biometricType == .faceID ? "Sign in with Face ID" : "Sign in with Touch ID"
+        biometricType == .faceID
+            ? "Sign in with Face ID" : "Sign in with Touch ID"
     }
 
     private var biometricAlertTitle: String {
