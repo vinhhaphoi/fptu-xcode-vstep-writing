@@ -33,6 +33,19 @@ struct HomeView: View {
         return scores.reduce(0, +) / Double(scores.count)
     }
 
+    // Add these two below averageScore
+    private var task1Count: Int {
+        recentSubmissions.filter {
+            firebaseService.questionMap[$0.questionId]?.taskType == "task1"
+        }.count
+    }
+
+    private var task2Count: Int {
+        recentSubmissions.filter {
+            firebaseService.questionMap[$0.questionId]?.taskType == "task2"
+        }.count
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 24) {
@@ -89,18 +102,36 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Sync to Watch
     private func syncToWatch() {
         let topics = recentSubmissions.prefix(3).compactMap { sub in
             firebaseService.questionMap[sub.questionId]?.title
         }
         let scores = recentSubmissions.prefix(3).compactMap(\.score)
 
+        let scoredSubmissions =
+            recentSubmissions
+            .filter { $0.score != nil }
+            .sorted { $0.submittedAt < $1.submittedAt }
+            .prefix(10)
+
+        let scoreHistory = scoredSubmissions.compactMap(\.score)
+        let scoreHistoryDates = scoredSubmissions.map {
+            $0.submittedAt.timeIntervalSince1970
+        }
+        let scoreHistoryTaskTypes = scoredSubmissions.map { sub in
+            firebaseService.questionMap[sub.questionId]?.taskType ?? "unknown"
+        }
+
         var message: [String: Any] = [
             WatchMessageKeys.displayName: displayName,
             WatchMessageKeys.totalSubmissions: recentSubmissions.count,
+            WatchMessageKeys.task1Count: task1Count,
+            WatchMessageKeys.task2Count: task2Count,
             WatchMessageKeys.recentTopics: topics,
             WatchMessageKeys.recentScores: scores,
+            WatchMessageKeys.scoreHistory: scoreHistory,
+            WatchMessageKeys.scoreHistoryDates: scoreHistoryDates,
+            WatchMessageKeys.scoreHistoryTaskTypes: scoreHistoryTaskTypes,
         ]
         if let avg = averageScore {
             message[WatchMessageKeys.averageScore] = avg

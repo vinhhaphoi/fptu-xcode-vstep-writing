@@ -80,6 +80,7 @@
 		27CA9FA42F602D2B003B8A32 /* Exceptions for "VSTEP Writing" folder in "VSTEP Writing for Watch" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Core/BrandColors.swift,
 				"GoogleService-Info.plist",
 			);
 			target = 27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */;

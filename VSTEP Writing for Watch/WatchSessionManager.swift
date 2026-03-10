@@ -1,11 +1,28 @@
 import Combine
 import Foundation
+import SwiftUI
 import WatchConnectivity
 
-// Sync state enum to track data availability
 enum WatchSyncState {
     case waiting
     case synced
+}
+
+// Mirrors ChartDataPoint.dotColor logic from iOS ScoreView
+struct ScoreEntry: Identifiable {
+    let id = UUID()
+    let index: Int
+    let score: Double
+    let date: Date
+    let taskType: String?
+
+    var dotColor: Color {
+        switch taskType {
+        case "task1": return BrandColor.light
+        case "task2": return BrandColor.medium
+        default: return BrandColor.primary
+        }
+    }
 }
 
 final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
@@ -18,6 +35,9 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
     @Published var recentTopics: [String] = []
     @Published var recentScores: [Double] = []
     @Published var totalSubmissions: Int = 0
+    @Published var task1Count: Int = 0
+    @Published var task2Count: Int = 0
+    @Published var scoreHistory: [ScoreEntry] = []
 
     override private init() {
         super.init()
@@ -64,7 +84,29 @@ final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
         if let total = message[WatchMessageKeys.totalSubmissions] as? Int {
             self.totalSubmissions = total
         }
-        // Mark as synced only when valid data received
+        if let t1 = message[WatchMessageKeys.task1Count] as? Int {
+            self.task1Count = t1
+        }
+        if let t2 = message[WatchMessageKeys.task2Count] as? Int {
+            self.task2Count = t2
+        }
+        if let scores = message[WatchMessageKeys.scoreHistory] as? [Double],
+            let timestamps = message[WatchMessageKeys.scoreHistoryDates]
+                as? [Double],
+            let taskTypes = message[WatchMessageKeys.scoreHistoryTaskTypes]
+                as? [String]
+        {
+            self.scoreHistory = zip(zip(scores, timestamps), taskTypes)
+                .enumerated()
+                .map { index, pair in
+                    ScoreEntry(
+                        index: index + 1,
+                        score: pair.0.0,
+                        date: Date(timeIntervalSince1970: pair.0.1),
+                        taskType: pair.1
+                    )
+                }
+        }
         self.syncState = .synced
     }
 
