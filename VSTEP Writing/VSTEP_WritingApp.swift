@@ -192,12 +192,17 @@ struct VSTEP_WritingApp: App {
     // Single shared instance for entire app lifetime
     @State private var store = StoreKitManager()
 
+    init() {
+        // Must activate on init, not onAppear
+        SessionManager.shared.activateSession()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(authManager)
                 .environmentObject(firebaseService)
-                .environment(store) 
+                .environment(store)
                 .task {
                     await AIUsageManager.shared.loadInitialData()
                 }

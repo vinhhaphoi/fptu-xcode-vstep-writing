@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - HomeView
 struct HomeView: View {
     @StateObject private var firebaseService = FirebaseService.shared
+    @StateObject private var sessionManager = SessionManager.shared
     @EnvironmentObject var authManager: AuthenticationManager
 
     @State private var recentSubmissions: [UserSubmission] = []
@@ -66,6 +67,9 @@ struct HomeView: View {
             await loadData()
             await refreshUnreadCount()
         }
+        .onChange(of: recentSubmissions) { _, _ in
+            syncToWatch()
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: .didReceivePushNotification
@@ -83,6 +87,25 @@ struct HomeView: View {
             NotificationView()
                 .onAppear { Task { await refreshUnreadCount() } }
         }
+    }
+
+    // MARK: - Sync to Watch
+    private func syncToWatch() {
+        let topics = recentSubmissions.prefix(3).compactMap { sub in
+            firebaseService.questionMap[sub.questionId]?.title
+        }
+        let scores = recentSubmissions.prefix(3).compactMap(\.score)
+
+        var message: [String: Any] = [
+            WatchMessageKeys.displayName: displayName,
+            WatchMessageKeys.totalSubmissions: recentSubmissions.count,
+            WatchMessageKeys.recentTopics: topics,
+            WatchMessageKeys.recentScores: scores,
+        ]
+        if let avg = averageScore {
+            message[WatchMessageKeys.averageScore] = avg
+        }
+        sessionManager.sendMessage(message)
     }
 
     // MARK: - Load Data
@@ -133,7 +156,6 @@ struct HomeView: View {
                     }
                 }
             }
-            // Semantic color: orange represents score/rating
             .tint(.orange)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -143,7 +165,6 @@ struct HomeView: View {
             } label: {
                 Image(systemName: "lightbulb")
             }
-            // Semantic color: yellow represents tips/ideas
             .tint(.yellow)
         }
         ToolbarSpacer(.fixed, placement: .topBarTrailing)
@@ -171,7 +192,6 @@ struct HomeView: View {
                         }
                     }
             }
-            // CHANGED: .primary -> BrandColor.primary for brand consistency
             .tint(BrandColor.primary)
         }
     }
@@ -183,7 +203,6 @@ struct HomeGreetingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // CHANGED: split Text to highlight displayName with BrandColor.primary
             (Text("Hello, ")
                 .foregroundStyle(.primary)
                 + Text(displayName)
@@ -302,7 +321,6 @@ struct ActivityStackCard: View {
     }
 
     private var taskBadgeColor: Color {
-        // CHANGED: task1 uses BrandColor.primary instead of .blue
         question?.taskType == "task1" ? BrandColor.primary : .purple
     }
 
@@ -412,7 +430,6 @@ struct ActivityStackCard: View {
                         .foregroundColor(.primary)
                         .lineLimit(1)
                 }
-
                 HStack(spacing: 6) {
                     if isLatest {
                         BadgeView(text: taskBadgeText, color: taskBadgeColor)
@@ -428,7 +445,6 @@ struct ActivityStackCard: View {
                             .foregroundColor(.secondary)
                     }
                 }
-
                 HStack(spacing: 4) {
                     Image(systemName: "clock")
                         .font(.caption2)
@@ -518,8 +534,7 @@ struct BlogSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Blog")
-                    .font(.headline)
+                Text("Blog").font(.headline)
                 Spacer()
                 Button("View All") {}
                     .font(.subheadline)
@@ -604,9 +619,7 @@ struct StatusBadgeView: View {
 struct LoadingView: View {
     var body: some View {
         VStack(spacing: 12) {
-            // CHANGED: tint ProgressView with BrandColor.primary
-            ProgressView()
-                .tint(BrandColor.primary)
+            ProgressView().tint(BrandColor.primary)
             Text("Loading your activity...")
                 .font(.subheadline)
                 .foregroundColor(.secondary)

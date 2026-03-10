@@ -35,18 +35,77 @@
 		2783EF512F3579A300F21398 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 2783EF502F3579A300F21398 /* GoogleSignInSwift */; };
 		27A09D992F5F05F400C05333 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 27A09D982F5F05F400C05333 /* Localizable.xcstrings */; };
 		27A09D9B2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */; };
+		27B614C92F602A9C00BBCFD5 /* VSTEP Writing for Watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 27B614BF2F602A9A00BBCFD5 /* VSTEP Writing for Watch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		27B614C72F602A9C00BBCFD5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 272C3ADF2F34E4AF0061A8A3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 27B614BE2F602A9A00BBCFD5;
+			remoteInfo = "VSTEP Writing for Watch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		27B614CA2F602A9C00BBCFD5 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				27B614C92F602A9C00BBCFD5 /* VSTEP Writing for Watch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		272C3AE72F34E4AF0061A8A3 /* VSTEP Writing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "VSTEP Writing.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		27A09D982F5F05F400C05333 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "VSTEP-Writing-InfoPlist.xcstrings"; sourceTree = "<group>"; };
+		27B614BF2F602A9A00BBCFD5 /* VSTEP Writing for Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "VSTEP Writing for Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		2792BC462F606221002DF27F /* Exceptions for "Share" folder in "VSTEP Writing for Watch" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				WatchMessageKeys.swift,
+			);
+			target = 27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */;
+		};
+		27CA9FA42F602D2B003B8A32 /* Exceptions for "VSTEP Writing" folder in "VSTEP Writing for Watch" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"GoogleService-Info.plist",
+			);
+			target = 27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		272C3AE92F34E4AF0061A8A3 /* VSTEP Writing */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				27CA9FA42F602D2B003B8A32 /* Exceptions for "VSTEP Writing" folder in "VSTEP Writing for Watch" target */,
+			);
 			path = "VSTEP Writing";
+			sourceTree = "<group>";
+		};
+		2792BC3F2F6061F1002DF27F /* Share */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				2792BC462F606221002DF27F /* Exceptions for "Share" folder in "VSTEP Writing for Watch" target */,
+			);
+			path = Share;
+			sourceTree = "<group>";
+		};
+		27B614C02F602A9A00BBCFD5 /* VSTEP Writing for Watch */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "VSTEP Writing for Watch";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -85,6 +144,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		27B614BC2F602A9A00BBCFD5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -94,6 +160,8 @@
 				27A09D982F5F05F400C05333 /* Localizable.xcstrings */,
 				27A09D9A2F5F1D0800C05333 /* VSTEP-Writing-InfoPlist.xcstrings */,
 				272C3AE92F34E4AF0061A8A3 /* VSTEP Writing */,
+				2792BC3F2F6061F1002DF27F /* Share */,
+				27B614C02F602A9A00BBCFD5 /* VSTEP Writing for Watch */,
 				272C3AE82F34E4AF0061A8A3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -102,6 +170,7 @@
 			isa = PBXGroup;
 			children = (
 				272C3AE72F34E4AF0061A8A3 /* VSTEP Writing.app */,
+				27B614BF2F602A9A00BBCFD5 /* VSTEP Writing for Watch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -116,13 +185,16 @@
 				272C3AE32F34E4AF0061A8A3 /* Sources */,
 				272C3AE42F34E4AF0061A8A3 /* Frameworks */,
 				272C3AE52F34E4AF0061A8A3 /* Resources */,
+				27B614CA2F602A9C00BBCFD5 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				27B614C82F602A9C00BBCFD5 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				272C3AE92F34E4AF0061A8A3 /* VSTEP Writing */,
+				2792BC3F2F6061F1002DF27F /* Share */,
 			);
 			name = "VSTEP Writing";
 			packageProductDependencies = (
@@ -157,6 +229,28 @@
 			productReference = 272C3AE72F34E4AF0061A8A3 /* VSTEP Writing.app */;
 			productType = "com.apple.product-type.application";
 		};
+		27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 27B614CD2F602A9C00BBCFD5 /* Build configuration list for PBXNativeTarget "VSTEP Writing for Watch" */;
+			buildPhases = (
+				27B614BB2F602A9A00BBCFD5 /* Sources */,
+				27B614BC2F602A9A00BBCFD5 /* Frameworks */,
+				27B614BD2F602A9A00BBCFD5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				27B614C02F602A9A00BBCFD5 /* VSTEP Writing for Watch */,
+			);
+			name = "VSTEP Writing for Watch";
+			packageProductDependencies = (
+			);
+			productName = "VSTEP Writing for Watch Watch App";
+			productReference = 27B614BF2F602A9A00BBCFD5 /* VSTEP Writing for Watch.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -164,11 +258,14 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2630;
+				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					272C3AE62F34E4AF0061A8A3 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					27B614BE2F602A9A00BBCFD5 = {
+						CreatedOnToolsVersion = 26.4;
 					};
 				};
 			};
@@ -192,6 +289,7 @@
 			projectRoot = "";
 			targets = (
 				272C3AE62F34E4AF0061A8A3 /* VSTEP Writing */,
+				27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */,
 			);
 		};
 /* End PBXProject section */
@@ -206,6 +304,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		27B614BD2F602A9A00BBCFD5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -216,12 +321,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		27B614BB2F602A9A00BBCFD5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		27B614C82F602A9C00BBCFD5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 27B614BE2F602A9A00BBCFD5 /* VSTEP Writing for Watch */;
+			targetProxy = 27B614C72F602A9C00BBCFD5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		272C3AF02F34E4B10061A8A3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
@@ -255,6 +376,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = RX33YUMV36;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -289,6 +411,7 @@
 		272C3AF12F34E4B10061A8A3 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
@@ -322,6 +445,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = RX33YUMV36;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -428,6 +552,82 @@
 			};
 			name = Release;
 		};
+		27B614CB2F602A9C00BBCFD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = RX33YUMV36;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "VSTEP Writing for Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "vinhhaphoi.com.VSTEP-Writing";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "vinhhaphoi.com.VSTEP-Writing.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		27B614CC2F602A9C00BBCFD5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = RX33YUMV36;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "VSTEP Writing for Watch";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "vinhhaphoi.com.VSTEP-Writing";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "vinhhaphoi.com.VSTEP-Writing.watchkitapp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -445,6 +645,15 @@
 			buildConfigurations = (
 				272C3AF32F34E4B10061A8A3 /* Debug */,
 				272C3AF42F34E4B10061A8A3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		27B614CD2F602A9C00BBCFD5 /* Build configuration list for PBXNativeTarget "VSTEP Writing for Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				27B614CB2F602A9C00BBCFD5 /* Debug */,
+				27B614CC2F602A9C00BBCFD5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

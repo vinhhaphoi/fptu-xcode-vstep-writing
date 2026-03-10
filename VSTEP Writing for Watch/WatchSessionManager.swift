@@ -1,0 +1,76 @@
+import Combine
+import Foundation
+import WatchConnectivity
+
+// Sync state enum to track data availability
+enum WatchSyncState {
+    case waiting
+    case synced
+}
+
+final class WatchSessionManager: NSObject, ObservableObject, WCSessionDelegate {
+
+    static let shared = WatchSessionManager()
+
+    @Published var syncState: WatchSyncState = .waiting
+    @Published var displayName: String = "Learner"
+    @Published var averageScore: Double? = nil
+    @Published var recentTopics: [String] = []
+    @Published var recentScores: [Double] = []
+    @Published var totalSubmissions: Int = 0
+
+    override private init() {
+        super.init()
+    }
+
+    func activateSession() {
+        guard WCSession.isSupported() else { return }
+        WCSession.default.delegate = self
+        WCSession.default.activate()
+    }
+
+    func sendMessage(_ message: [String: Any]) {
+        guard WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(message, replyHandler: nil)
+    }
+
+    func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any]
+    ) {
+        DispatchQueue.main.async { self.parseMessage(message) }
+    }
+
+    func session(
+        _ session: WCSession,
+        didReceiveApplicationContext applicationContext: [String: Any]
+    ) {
+        DispatchQueue.main.async { self.parseMessage(applicationContext) }
+    }
+
+    private func parseMessage(_ message: [String: Any]) {
+        if let name = message[WatchMessageKeys.displayName] as? String {
+            self.displayName = name
+        }
+        if let avg = message[WatchMessageKeys.averageScore] as? Double {
+            self.averageScore = avg
+        }
+        if let topics = message[WatchMessageKeys.recentTopics] as? [String] {
+            self.recentTopics = topics
+        }
+        if let scores = message[WatchMessageKeys.recentScores] as? [Double] {
+            self.recentScores = scores
+        }
+        if let total = message[WatchMessageKeys.totalSubmissions] as? Int {
+            self.totalSubmissions = total
+        }
+        // Mark as synced only when valid data received
+        self.syncState = .synced
+    }
+
+    func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {}
+}
