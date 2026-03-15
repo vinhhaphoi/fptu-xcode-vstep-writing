@@ -9,20 +9,18 @@ struct ProfileView: View {
     @Environment(StoreKitManager.self) private var store
     @AppStorage("isDarkMode") private var isDarkMode = false
 
-    // Navigation States
     @State private var showSettings = false
     @State private var showEditProfile = false
-    @State private var selectedPolicy: PolicyType? = nil
+    @State private var selectedPolicy: PolicyInfo.PolicyType? = nil
+
     @State private var showLogoutAlert = false
     @State private var showContactUs = false
     @State private var showSubscription = false
 
-    // Photo Upload States
     @State private var showImagePicker = false
     @State private var selectedImage: PhotosPickerItem?
     @State private var localAvatarPreview: Image?
 
-    // Subscription States
     @State private var subscriptionStatus: String? = nil
     @State private var subscriptionProductID: String? = nil
     @State private var subscriptionExpiry: Date? = nil
@@ -30,11 +28,15 @@ struct ProfileView: View {
     @State private var alertMessage: AlertMessage?
 
     private let db = Firestore.firestore()
-    @State private var usageManager = AIUsageManager.shared
+    private var usageManager: AIUsageManager { AIUsageManager.shared }
 
-    // MARK: - Icon Size Constants
     private let cardIconSize: CGFloat = 20
     private let cardIconFrameWidth: CGFloat = 40
+
+    private var isFree: Bool {
+        !store.isPurchased("com.vstep.advanced")
+            && !store.isPurchased("com.vstep.premier")
+    }
 
     var body: some View {
         ScrollView {
@@ -125,7 +127,7 @@ struct ProfileView: View {
         .task {
             await loadSubscription()
             await firebaseService.fetchAvatarURL()
-            await usageManager.loadInitialData()
+            await usageManager.syncUsageFromServer()
         }
     }
 
@@ -303,14 +305,9 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Quota Card (đã có BrandColor ở lần trước)
+    // MARK: - Quota Card (data from server sync)
     private var quotaCard: some View {
-        let limits = usageManager.limits(for: store)
-        let isFree =
-            !store.isPurchased("com.vstep.advanced")
-            && !store.isPurchased("com.vstep.premier")
-
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "gauge.with.dots.needle.67percent")
                     .font(.system(size: cardIconSize, weight: .semibold))
@@ -319,9 +316,13 @@ struct ProfileView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(BrandColor.primary)
                 Spacer()
-                Text("Resets at midnight")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                if usageManager.isLoading {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Text("Resets at midnight")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
@@ -333,23 +334,22 @@ struct ProfileView: View {
                 icon: "doc.text",
                 iconColor: BrandColor.primary,
                 title: "Essays per day",
-                used: usageManager.dailyUsage.totalEssaysGradedToday,
-                total: limits.maxEssaysPerDay,
-                isUnlimited: limits.maxEssaysPerDay == Int.max
+                used: usageManager.essayUsedToday,
+                total: usageManager.essayLimitPerDay,
+                isUnlimited: false,
+                isLocked: isFree
             )
 
             Divider().padding(.leading, 68)
 
-            let avgGradingUsed =
-                usageManager.dailyUsage.gradingAttemptsPerEssay.values.max()
-                ?? 0
             quotaRow(
                 icon: "brain.head.profile",
                 iconColor: BrandColor.medium,
                 title: "AI grading per essay",
-                used: avgGradingUsed,
-                total: limits.gradingAttemptsPerEssay,
-                isUnlimited: limits.gradingAttemptsPerEssay == Int.max
+                used: usageManager.essayGradingUsedMax,
+                total: usageManager.essayGradingLimit,
+                isUnlimited: false,
+                isLocked: isFree
             )
 
             Divider().padding(.leading, 68)
@@ -358,25 +358,20 @@ struct ProfileView: View {
                 icon: "bubble.left.and.bubble.right",
                 iconColor: BrandColor.soft,
                 title: "Chatbot questions",
-                used: usageManager.dailyUsage.chatbotQuestionsToday,
-                total: limits.chatbotQuestionsPerDay,
+                used: usageManager.chatUsedToday,
+                total: usageManager.chatLimitPerDay,
                 isUnlimited: false,
                 isLocked: isFree
             )
 
             Divider().padding(.leading, 68)
 
-            let currentWeek = AIUsageManager.isoWeekKey()
-            let insightUsed =
-                usageManager.weeklyInsightUsage.weekKey == currentWeek
-                ? usageManager.weeklyInsightUsage.usedCount : 0
-
             quotaRow(
                 icon: "chart.bar.doc.horizontal",
                 iconColor: BrandColor.light,
                 title: "AI insight refreshes",
-                used: insightUsed,
-                total: limits.insightRefreshesPerWeek,
+                used: usageManager.insightUsedThisWeek,
+                total: usageManager.insightLimitPerWeek,
                 isUnlimited: false,
                 isLocked: isFree,
                 isWeekly: true,
@@ -459,7 +454,8 @@ struct ProfileView: View {
                                         isExhausted
                                             ? Color.red
                                             : progress > 0.75
-                                                ? Color.orange : iconColor
+                                                ? Color.orange
+                                                : iconColor
                                     )
                                     .frame(
                                         width: geo.size.width * progress,
@@ -624,21 +620,29 @@ struct ProfileView: View {
         .multilineTextAlignment(.center)
     }
 
-    // MARK: - Firebase
+    // MARK: - Firebase Helpers
     private func loadSubscription() async {
         guard let userID = Auth.auth().currentUser?.uid else {
             isLoadingSubscription = false
             return
         }
         do {
-            let doc = try await db.collection("subscriptions").document(userID)
+            let doc = try await db.collection("users").document(userID)
                 .getDocument()
             let data = doc.data()
             await MainActor.run {
-                subscriptionStatus = data?["status"] as? String
-                subscriptionProductID = data?["productID"] as? String
-                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?
-                    .dateValue()
+                let isSubscribed = data?["isSubscribed"] as? Bool ?? false
+                let tier = data?["subscriptionTier"] as? String ?? "free"
+                
+                subscriptionStatus = isSubscribed ? "active" : nil
+                
+                switch tier {
+                case "advanced": subscriptionProductID = "com.vstep.advanced"
+                case "premier": subscriptionProductID = "com.vstep.premier"
+                default: subscriptionProductID = nil
+                }
+                
+                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
                 isLoadingSubscription = false
             }
         } catch {
@@ -669,13 +673,12 @@ struct ProfileView: View {
             group.addTask {
                 try? await self.firebaseService.fetchUserProgress()
             }
-            group.addTask { await self.usageManager.loadInitialData() }
+            group.addTask { await self.usageManager.syncUsageFromServer() }
         }
     }
 
     private func handleImageSelection(_ item: PhotosPickerItem?) async {
         guard let item else { return }
-
         do {
             guard let data = try await item.loadTransferable(type: Data.self),
                 let uiImage = UIImage(data: data)
@@ -686,20 +689,16 @@ struct ProfileView: View {
                 )
                 return
             }
-
             localAvatarPreview = Image(uiImage: uiImage)
             firebaseService.isUploadingPhoto = true
             firebaseService.avatarUploadError = nil
-
             let newURL = try await firebaseService.uploadAvatar(image: uiImage)
-
             firebaseService.isUploadingPhoto = false
             localAvatarPreview = nil
             alertMessage = AlertMessage(
                 title: "Success",
                 message: "Profile photo updated!"
             )
-
             print("[ProfileView] Avatar upload success — URL: \(newURL)")
         } catch {
             firebaseService.isUploadingPhoto = false

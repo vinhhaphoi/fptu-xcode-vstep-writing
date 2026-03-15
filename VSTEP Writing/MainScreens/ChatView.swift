@@ -23,15 +23,15 @@ struct ChatView: View {
     }
 
     private var canChat: Bool {
-        usageManager.canUseChatbot(store: store).isAllowed
+        !isFreeUser && !AIUsageManager.shared.isChatLimitReached
     }
 
     private var remainingQuestions: Int {
-        usageManager.remainingChatbot(store: store)
+        AIUsageManager.shared.remainingChat
     }
 
     private var chatbotLimit: Int {
-        usageManager.limits(for: store).chatbotQuestionsPerDay
+        AIUsageManager.shared.chatLimitPerDay
     }
 
     // MARK: - Body
@@ -64,10 +64,11 @@ struct ChatView: View {
                     .zIndex(1)
             }
         }
-        .animation(.easeInOut(duration: 0.3), value: viewModel.errorMessage)
         .task {
-            await usageManager.loadInitialData()
+            // Sync quota từ server để hiển thị badge ngay khi vào màn hình
+            await AIUsageManager.shared.syncUsageFromServer()
         }
+        .animation(.easeInOut(duration: 0.3), value: viewModel.errorMessage)
     }
 
     // MARK: - Usage Banner
@@ -243,7 +244,6 @@ struct ChatView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // History button - hidden for free users
         ToolbarItem(placement: .navigationBarLeading) {
             if !isFreeUser {
                 Button {
@@ -259,11 +259,9 @@ struct ChatView: View {
             }
         }
 
-        // Remaining count + new session - hidden for free users
         ToolbarItem(placement: .navigationBarTrailing) {
             if !isFreeUser {
                 HStack(spacing: 12) {
-                    // Remaining count - only show when above warning threshold
                     if remainingQuestions > 3 {
                         HStack(spacing: 4) {
                             Image(systemName: "bubble.left.fill")
@@ -274,7 +272,6 @@ struct ChatView: View {
                         .foregroundStyle(BrandColor.medium)
                     }
 
-                    // New session button
                     Button {
                         viewModel.startNewSession()
                     } label: {
@@ -290,9 +287,7 @@ struct ChatView: View {
     // MARK: - Send Handler
 
     private func handleSend() {
-        // Banner already shows the reason - just block silently here
         guard canChat else { return }
-
         viewModel.sendMessage()
     }
 

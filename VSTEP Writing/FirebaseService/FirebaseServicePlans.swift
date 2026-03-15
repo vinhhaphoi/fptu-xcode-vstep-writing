@@ -5,14 +5,14 @@ extension FirebaseService {
 
     private static let freePlanID = "com.vstep.free"
 
-    // MARK: - Fetch Single Plan
+    // MARK: - Fetch Single Plan (for IAP display purposes)
     func fetchPlan(productID: String) async -> Plan? {
         let doc = try? await db.collection("plans").document(productID)
             .getDocument()
         return try? doc?.data(as: Plan.self)
     }
 
-    // MARK: - Fetch Multiple Plans (parallel)
+    // MARK: - Fetch Multiple Plans (for IAP display purposes)
     func fetchPlans(productIDs: [String]) async -> [String: Plan] {
         var result: [String: Plan] = [:]
         await withTaskGroup(of: (String, Plan?).self) { group in
@@ -29,33 +29,56 @@ extension FirebaseService {
         return result
     }
 
-    // MARK: - Fetch All Plans including free limits
-    // Returns [productID: PlanLimits] for all plans including free
+    // MARK: - Fetch All Plan Limits from settings/subscription_plans
+    // Quota source per Cloud Functions v3.0 — single document fetch
+    // Returns [productID: PlanLimits] keyed by com.vstep.* product IDs
     func fetchAllPlanLimits() async -> [String: PlanLimits] {
-        let allIDs = [
-            "com.vstep.free", "com.vstep.advanced", "com.vstep.premier",
-        ]
+        let snap =
+            try? await db
+            .collection("settings")
+            .document("subscription_plans")
+            .getDocument()
+
+        guard let data = snap?.data() else {
+            print("[FirebaseService] fetchAllPlanLimits: fallback to defaults")
+            return fallbackPlanLimits()
+        }
+
         var result: [String: PlanLimits] = [:]
 
-        await withTaskGroup(of: (String, PlanLimits?).self) { group in
-            for id in allIDs {
-                group.addTask {
-                    let doc = try? await self.db.collection("plans").document(
-                        id
-                    ).getDocument()
-                    let limits = try? doc?.data()?["limits"].flatMap {
-                        try? Firestore.Decoder().decode(
-                            PlanLimits.self,
-                            from: $0
-                        )
-                    }
-                    return (id, limits)
-                }
-            }
-            for await (id, limits) in group {
-                if let limits { result[id] = limits }
-            }
+        // Map server tier keys -> product IDs
+        let tierToProductID: [String: String] = [
+            "advanced": "com.vstep.advanced",
+            "premier": "com.vstep.premier",
+        ]
+
+        for (tier, productID) in tierToProductID {
+            guard let tierData = data[tier] as? [String: Any] else { continue }
+
+            result[productID] = PlanLimits(
+                maxEssaysPerDay: tierData["essaysPerDay"] as? Int ?? 0,
+                gradingAttemptsPerEssay: tierData["gradingAttemptsPerEssay"]
+                    as? Int ?? 3,
+                submissionsPerEssayPerDay: tierData["submissionsPerEssayPerDay"]
+                    as? Int ?? 3,
+                chatbotQuestionsPerDay: tierData["chatsPerDay"] as? Int ?? 0,
+                insightRefreshesPerWeek: tierData["analyticsPerWeek"] as? Int
+                    ?? 0
+            )
         }
-        return result
+
+        // Free plan stays client-side default — not managed by server
+        result[Self.freePlanID] = .freeFallback
+
+        return result.isEmpty ? fallbackPlanLimits() : result
+    }
+
+    // MARK: - Private: Fallback when Firestore unavailable
+    private func fallbackPlanLimits() -> [String: PlanLimits] {
+        [
+            "com.vstep.free": .freeFallback,
+            "com.vstep.advanced": .advancedFallback,
+            "com.vstep.premier": .premierFallback,
+        ]
     }
 }

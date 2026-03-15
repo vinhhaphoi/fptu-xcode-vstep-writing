@@ -17,8 +17,15 @@ extension FirebaseService {
             .order(by: "questionId")
             .getDocuments()
 
-        questions = try snapshot.documents.compactMap {
-            try $0.data(as: VSTEPQuestion.self)
+        questions = snapshot.documents.compactMap { doc in
+            do {
+                return try doc.data(as: VSTEPQuestion.self)
+            } catch {
+                print(
+                    "[FirebaseService] Skip question \(doc.documentID): \(error.localizedDescription)"
+                )
+                return nil
+            }
         }
         print("[FirebaseService] Fetched \(questions.count) questions")
     }
@@ -55,7 +62,10 @@ extension FirebaseService {
             .document("vstep_writing_rubric")
             .getDocument()
 
-        guard snapshot.exists else { throw FirebaseServiceError.documentNotFound }
+        guard snapshot.exists else {
+            throw FirebaseServiceError.documentNotFound
+        }
+
         rubric = try snapshot.data(as: VSTEPRubric.self)
         print("[FirebaseService] Fetched rubric")
     }

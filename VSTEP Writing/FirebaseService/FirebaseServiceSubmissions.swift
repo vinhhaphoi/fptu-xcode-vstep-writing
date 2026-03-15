@@ -4,18 +4,22 @@ import Foundation
 extension FirebaseService {
 
     // MARK: - Submit Essay
+    // Path: submissions/{userId}/submissions/{submissionId}
     func submitEssay(_ submission: UserSubmission) async throws -> String {
         guard let userId = currentUserId else {
             throw FirebaseServiceError.notAuthenticated
         }
 
+        var submissionWithId = submission
+        submissionWithId.userId = userId
+
         let ref =
             try await db
-            .collection("users").document(userId)
             .collection("submissions")
-            .addDocument(data: Firestore.Encoder().encode(submission))
+            .document(userId)
+            .collection("submissions")
+            .addDocument(data: Firestore.Encoder().encode(submissionWithId))
 
-        try await updateUserProgress(questionId: submission.questionId)
         print("[FirebaseService] submitEssay — docId: \(ref.documentID)")
         return ref.documentID
     }
@@ -28,41 +32,86 @@ extension FirebaseService {
 
         let snapshot =
             try await db
-            .collection("users").document(userId)
+            .collection("submissions")
+            .document(userId)
             .collection("submissions")
             .order(by: "submittedAt", descending: true)
             .getDocuments()
 
-        return try snapshot.documents.compactMap {
-            try $0.data(as: UserSubmission.self)
+        print("[FirebaseService] fetchUserSubmissions — \(snapshot.documents.count) docs fetched for user \(userId)")
+
+        var results: [UserSubmission] = []
+        for doc in snapshot.documents {
+            do {
+                let sub = try doc.data(as: UserSubmission.self)
+                results.append(sub)
+            } catch {
+                print("[FirebaseService] Skipping submission \(doc.documentID): \(error.localizedDescription)")
+            }
         }
+        return results
     }
 
-    // MARK: - Update Submission Score
+    // MARK: - Fetch Submissions for Question
+    func fetchSubmissions(forQuestionId questionId: String) async throws
+        -> [UserSubmission]
+    {
+        guard let userId = currentUserId else {
+            throw FirebaseServiceError.notAuthenticated
+        }
+
+        let snapshot =
+            try await db
+            .collection("submissions")
+            .document(userId)
+            .collection("submissions")
+            .whereField("questionId", isEqualTo: questionId)
+            .order(by: "submittedAt", descending: true)
+            .getDocuments()
+
+        var results: [UserSubmission] = []
+        for doc in snapshot.documents {
+            do {
+                let sub = try doc.data(as: UserSubmission.self)
+                results.append(sub)
+            } catch {
+                print("[FirebaseService] Skipping submission \(doc.documentID): \(error.localizedDescription)")
+            }
+        }
+        return results
+    }
+
+    // MARK: - Update Submission Score (teacher/admin only)
+    // Uses collectionGroup — teacher does not need to know userId
     func updateSubmissionScore(
         submissionId: String,
         score: Double,
         feedback: String
     ) async throws {
-        guard let userId = currentUserId else {
-            throw FirebaseServiceError.notAuthenticated
+        let query =
+            try await db
+            .collectionGroup("submissions")
+            .whereField(FieldPath.documentID(), isEqualTo: submissionId)
+            .getDocuments()
+
+        guard let docRef = query.documents.first?.reference else {
+            print("[FirebaseService] Submission not found for update")
+            return
         }
 
-        try await db
-            .collection("users").document(userId)
-            .collection("submissions").document(submissionId)
-            .updateData([
-                "score": score,
-                "feedback": feedback,
-                "status": SubmissionStatus.graded.rawValue,
-            ])
+        try await docRef.updateData([
+            "score": score,
+            "feedback": feedback,
+            "status": SubmissionStatus.graded.rawValue,
+            "gradedAt": FieldValue.serverTimestamp(),
+        ])
 
-        try await recalculateAverageScore(userId: userId)
+        // Stats aggregation triggered automatically by Cloud Function onSubmissionUpdated
         print("[FirebaseService] Score updated for submission \(submissionId)")
     }
 
-    // MARK: - Listen for AI Grading Result
-    // Auto timeout after 120 seconds if AI does not return result
+    // MARK: - Listen for Grading Result
+    // Uses collectionGroup to locate doc, then attaches snapshot listener
     func listenForGradingResult(
         submissionId: String,
         questionId: String,
@@ -73,18 +122,22 @@ extension FirebaseService {
 
         stopListening(forQuestionId: questionId)
 
+        // Direct path is faster than collectionGroup since we know userId
         let docRef =
             db
-            .collection("users").document(userId)
-            .collection("submissions").document(submissionId)
+            .collection("submissions")
+            .document(userId)
+            .collection("submissions")
+            .document(submissionId)
 
         let listener = docRef.addSnapshotListener { snapshot, error in
-            if let error = error {
+            if let error {
                 print(
                     "[FirebaseService] Listener error: \(error.localizedDescription)"
                 )
                 return
             }
+
             guard let snapshot, snapshot.exists else { return }
 
             do {
@@ -106,6 +159,7 @@ extension FirebaseService {
 
         submissionListeners[questionId] = listener
 
+        // Timeout: 120s
         Task {
             try? await Task.sleep(for: .seconds(120))
             guard self.submissionListeners[questionId] != nil else { return }
@@ -119,6 +173,7 @@ extension FirebaseService {
                 "status": SubmissionStatus.failed.rawValue,
                 "errorMessage": "AI grading timed out. Please try again.",
             ])
+
             onTimeout()
         }
     }

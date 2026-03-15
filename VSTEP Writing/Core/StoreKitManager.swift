@@ -10,18 +10,16 @@ class StoreKitManager {
     // MARK: - Properties
     var products: [Product] = []
     var purchasedProductIDs: Set<String> = []
-    var expiryDates: [String: Date] = [:]  // Added: productID -> expiryDate for View
+    var expiryDates: [String: Date] = [:]
     var isLoading: Bool = false
     var errorMessage: String? = nil
 
-    // Single source of productIDs - SubscriptionsView reads from here
     let productIDs = ["com.vstep.advanced", "com.vstep.premier"]
 
     private var transactionListenerTask: Task<Void, Never>? = nil
 
     // MARK: - Init
     init() {
-        // Must start listener before anything else to avoid missing transactions
         transactionListenerTask = listenForTransactions()
         Task {
             await loadProducts()
@@ -43,7 +41,7 @@ class StoreKitManager {
             }
         } catch {
             errorMessage = error.localizedDescription
-            print("Failed to load products: \(error)")
+            print("[StoreKitManager] Load products error: \(error)")
         }
         isLoading = false
     }
@@ -55,18 +53,28 @@ class StoreKitManager {
         switch result {
         case .success(.verified(let transaction)):
             await transaction.finish()
+
+            // Step 1: Sync local StoreKit state
             await syncEntitlementsToFirebase()
-            print("Purchase successful: \(transaction.productID)")
+
+            // Step 2: Ask backend to independently verify with Apple
+            await verifyWithBackend(transaction: transaction)
+
+            print(
+                "[StoreKitManager] Purchase successful: \(transaction.productID)"
+            )
 
         case .success(.unverified(let transaction, let error)):
             // Do not finish unverified - let Apple verify first
-            print("Unverified transaction \(transaction.productID): \(error)")
+            print(
+                "[StoreKitManager] Unverified transaction \(transaction.productID): \(error)"
+            )
 
         case .pending:
-            print("Purchase pending")
+            print("[StoreKitManager] Purchase pending")
 
         case .userCancelled:
-            print("User cancelled")
+            print("[StoreKitManager] User cancelled")
 
         @unknown default:
             break
@@ -74,6 +82,7 @@ class StoreKitManager {
     }
 
     // MARK: - Listen For Transactions
+    // Handles Apple server events: renewal, refund, revoke
     private func listenForTransactions() -> Task<Void, Never> {
         Task.detached { [weak self] in
             guard let self else { return }
@@ -81,12 +90,19 @@ class StoreKitManager {
                 switch result {
                 case .verified(let transaction):
                     await transaction.finish()
-                    // Every Apple event (renewal, refund) triggers a full sync
-                    await self.syncEntitlementsToFirebase()
+
+                    if transaction.revocationDate != nil {
+                        // Refund detected — revoke access on backend
+                        await self.revokeAccessOnBackend()
+                    } else {
+                        // Renewal or new transaction — sync normally
+                        await self.syncEntitlementsToFirebase()
+                        await self.verifyWithBackend(transaction: transaction)
+                    }
 
                 case .unverified(let transaction, let error):
                     print(
-                        "Unverified update \(transaction.productID): \(error)"
+                        "[StoreKitManager] Unverified update \(transaction.productID): \(error)"
                     )
                 }
             }
@@ -98,10 +114,21 @@ class StoreKitManager {
         do {
             try await AppStore.sync()
             await syncEntitlementsToFirebase()
-            print("Purchases restored")
+
+            // Re-verify latest active transaction after restore
+            for await result in Transaction.currentEntitlements {
+                if case .verified(let transaction) = result,
+                    transaction.revocationDate == nil
+                {
+                    await verifyWithBackend(transaction: transaction)
+                    break
+                }
+            }
+
+            print("[StoreKitManager] Purchases restored")
         } catch {
             errorMessage = error.localizedDescription
-            print("Restore error: \(error)")
+            print("[StoreKitManager] Restore error: \(error)")
         }
     }
 
@@ -115,11 +142,11 @@ class StoreKitManager {
     }
 }
 
-// MARK: - Firebase Sync
+// MARK: - Firebase Sync (Local StoreKit → Firestore users/{userId})
 extension StoreKitManager {
 
-    /// StoreKit is source of truth. Reads currentEntitlements and overwrites Firebase.
-    /// If no active entitlement found, writes inactive status to Firebase.
+    // StoreKit is source of truth for local state.
+    // Writes to users/{userId} per Cloud Functions v3.0 Required Schema.
     func syncEntitlementsToFirebase() async {
         guard let userID = Auth.auth().currentUser?.uid else { return }
 
@@ -134,7 +161,6 @@ extension StoreKitManager {
 
             activeIDs.insert(transaction.productID)
 
-            // Collect expiry per productID for View display
             if let expiry = transaction.expirationDate {
                 collectedExpiry[transaction.productID] = expiry
             }
@@ -147,39 +173,112 @@ extension StoreKitManager {
 
         await MainActor.run {
             purchasedProductIDs = activeIDs
-            expiryDates = collectedExpiry  // Update expiry map for View
+            expiryDates = collectedExpiry
         }
 
-        let ref = FirebaseService.shared.db
-            .collection("subscriptions")
+        // Write to users/{userId} — required by Cloud Functions v3.0
+        let userRef = FirebaseService.shared.db
+            .collection("users")
             .document(userID)
 
         do {
             if let tx = latestTransaction {
+                // Map com.vstep.advanced -> "advanced", com.vstep.premier -> "premier"
+                let tier =
+                    tx.productID.components(separatedBy: ".").last ?? "free"
+
                 var data: [String: Any] = [
-                    "productID": tx.productID,
-                    "status": "active",
-                    "startDate": Timestamp(date: tx.purchaseDate),
+                    "isSubscribed": true,
+                    "subscriptionTier": tier,
                     "originalTransactionId": String(tx.originalID),
                     "updatedAt": FieldValue.serverTimestamp(),
                 ]
+
                 if let expiry = tx.expirationDate {
                     data["expiryDate"] = Timestamp(date: expiry)
+                } else {
+                    data["expiryDate"] = NSNull()
                 }
-                // Use setData without merge to fully overwrite stale data
-                try await ref.setData(data)
-                print("Firebase synced active: \(tx.productID)")
+
+                try await userRef.setData(data, merge: true)
+                print("[StoreKitManager] Synced active tier: \(tier)")
+
             } else {
-                try await ref.setData([
-                    "productID": NSNull(),
-                    "status": "inactive",
-                    "expiryDate": NSNull(),
-                    "updatedAt": FieldValue.serverTimestamp(),
-                ])
-                print("Firebase synced: no active subscription")
+                // No active subscription — reset to free
+                try await userRef.setData(
+                    [
+                        "isSubscribed": false,
+                        "subscriptionTier": "free",
+                        "expiryDate": NSNull(),
+                        "updatedAt": FieldValue.serverTimestamp(),
+                    ],
+                    merge: true
+                )
+                print("[StoreKitManager] Synced: no active subscription")
             }
         } catch {
-            print("Firebase sync error: \(error.localizedDescription)")
+            print(
+                "[StoreKitManager] Firestore sync error: \(error.localizedDescription)"
+            )
         }
+    }
+}
+
+// MARK: - Backend Verification (Cloud Functions v3.0)
+extension StoreKitManager {
+
+    // Call verifyStoreKitPurchase after every purchase/restore
+    // Request: { transactionId, productId }
+    // Response: { success, tier, expiryDate }
+    private func verifyWithBackend(transaction: AppTransaction) async {
+        do {
+            try await AIUsageManager.shared.verifyStoreKitPurchase(
+                transactionId: transaction.id,
+                productId: transaction.productID
+            )
+            print(
+                "[StoreKitManager] Backend verification successful: \(transaction.productID)"
+            )
+        } catch {
+            // Non-critical: local StoreKit state already synced
+            // Backend will re-verify via Apple Webhook on next renewal
+            print(
+                "[StoreKitManager] Backend verification failed (non-critical): \(error.localizedDescription)"
+            )
+        }
+    }
+
+    // Call when StoreKit detects revocationDate != nil (refund)
+    // Request: { clearStatus: true }
+    private func revokeAccessOnBackend() async {
+        do {
+            try await AIUsageManager.shared.revokeSubscription()
+            print("[StoreKitManager] Backend access revoked (refund)")
+        } catch {
+            print(
+                "[StoreKitManager] Revoke failed: \(error.localizedDescription)"
+            )
+        }
+
+        // Also clear local state immediately
+        await MainActor.run {
+            purchasedProductIDs = []
+            expiryDates = [:]
+        }
+
+        // Reset Firestore local write (backend also handles this via clearStatus)
+        guard let userID = Auth.auth().currentUser?.uid else { return }
+        try? await FirebaseService.shared.db
+            .collection("users")
+            .document(userID)
+            .setData(
+                [
+                    "isSubscribed": false,
+                    "subscriptionTier": "free",
+                    "expiryDate": NSNull(),
+                    "updatedAt": FieldValue.serverTimestamp(),
+                ],
+                merge: true
+            )
     }
 }

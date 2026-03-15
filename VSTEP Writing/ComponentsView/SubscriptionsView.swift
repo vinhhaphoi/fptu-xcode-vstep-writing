@@ -6,6 +6,7 @@ struct SubscriptionsView: View {
 
     @Environment(StoreKitManager.self) private var store
     @State private var plans: [String: Plan] = [:]
+    @State private var planLimits: [String: PlanLimits] = [:]
     @State private var alertMessage: AlertMessage? = nil
     @State private var isRestoring = false
     @Environment(\.scenePhase) private var scenePhase
@@ -17,7 +18,6 @@ struct SubscriptionsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-
                 headerCard
                     .padding()
 
@@ -62,7 +62,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Header Card
-
     private var headerCard: some View {
         VStack(spacing: 16) {
             ZStack {
@@ -90,7 +89,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Active Subscription Section
-
     private var activeSubscriptionSection: some View {
         VStack(spacing: 10) {
             HStack(spacing: 15) {
@@ -141,7 +139,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Plans Section
-
     private var plansSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Choose a Plan")
@@ -158,7 +155,7 @@ struct SubscriptionsView: View {
     private func planCard(product: Product) -> some View {
         let plan = plans[product.id]
         let isActive = activeProductID == product.id
-        let limits = AIUsageManager.shared.planLimits[product.id]
+        let limits = planLimits[product.id]
 
         return VStack(spacing: 0) {
 
@@ -219,23 +216,19 @@ struct SubscriptionsView: View {
             Divider()
                 .padding(.leading, 70)
 
-            // Live Limits Section
             if let limits {
                 liveLimitsSection(limits: limits)
-
                 Divider()
                     .padding(.leading, 70)
             }
 
-            // Benefits Section
             if let benefits = plan?.benefits {
-                VStack(spacing: 0) {
-                    // Updated: explain daily AI grading quota clearly
-                    let maxEssays = limits?.maxEssaysPerDay ?? 1
-                    let gradingAttempts = limits?.gradingAttemptsPerEssay ?? 1
-                    let submissions = limits?.submissionsPerEssayPerDay ?? 1
-                    let isUnlimitedEssays = maxEssays == Int.max
+                let maxEssays = limits?.maxEssaysPerDay ?? 1
+                let gradingAttempts = limits?.gradingAttemptsPerEssay ?? 1
+                let submissions = limits?.submissionsPerEssayPerDay ?? 1
+                let isUnlimitedEssays = maxEssays == Int.max
 
+                VStack(spacing: 0) {
                     benefitRow(
                         icon: "doc.text.magnifyingglass",
                         title: isUnlimitedEssays
@@ -252,7 +245,6 @@ struct SubscriptionsView: View {
                             "\(limits?.chatbotQuestionsPerDay ?? 0) questions/day",
                         enabled: benefits.aiGrammarCheck
                     )
-                    // Advanced Analytics: no longer comingSoon, shows weekly insight limit
                     benefitRow(
                         icon: "chart.bar.fill",
                         title: "Advanced Analytics",
@@ -267,7 +259,7 @@ struct SubscriptionsView: View {
                         subtitle: nil,
                         enabled: benefits.prioritySupport,
                         badge: .comingSoon,
-                        isLast: true  // Remove Ads removed — this is now last
+                        isLast: true
                     )
                 }
             } else {
@@ -278,7 +270,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Live Limits Section
-
     private func liveLimitsSection(limits: PlanLimits) -> some View {
         HStack(spacing: 0) {
             limitBadge(
@@ -288,8 +279,7 @@ struct SubscriptionsView: View {
                 label: "Essays/day"
             )
 
-            Divider()
-                .frame(height: 36)
+            Divider().frame(height: 36)
 
             limitBadge(
                 icon: "brain.head.profile",
@@ -298,14 +288,12 @@ struct SubscriptionsView: View {
                 label: "AI Grading"
             )
 
-            Divider()
-                .frame(height: 36)
+            Divider().frame(height: 36)
 
             limitBadge(
                 icon: "bubble.left.fill",
                 value: limits.chatbotQuestionsPerDay == 0
-                    ? "—"
-                    : "\(limits.chatbotQuestionsPerDay)",
+                    ? "—" : "\(limits.chatbotQuestionsPerDay)",
                 label: "Chat/day"
             )
         }
@@ -333,7 +321,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Benefit Row
-
     private enum BenefitBadge {
         case comingSoon
     }
@@ -395,14 +382,12 @@ struct SubscriptionsView: View {
             .padding(.vertical, 10)
 
             if !isLast {
-                Divider()
-                    .padding(.leading, 70)
+                Divider().padding(.leading, 70)
             }
         }
     }
 
     // MARK: - Skeleton
-
     private var skeletonBenefits: some View {
         VStack(spacing: 0) {
             ForEach(0..<4, id: \.self) { _ in
@@ -421,7 +406,6 @@ struct SubscriptionsView: View {
     }
 
     // MARK: - Restore Button
-
     private var restoreButton: some View {
         VStack(spacing: 10) {
             Button {
@@ -468,12 +452,18 @@ struct SubscriptionsView: View {
         }
     }
 
-    // MARK: - Load Plans via FirebaseService
-
+    // MARK: - Load Data
     private func loadFirebasePlans() async {
-        let fetched = await FirebaseService.shared.fetchPlans(
+        async let fetchedPlans = FirebaseService.shared.fetchPlans(
             productIDs: store.productIDs
         )
-        await MainActor.run { plans = fetched }
+        async let fetchedLimits = FirebaseService.shared.fetchAllPlanLimits()
+
+        let (plans, limits) = await (fetchedPlans, fetchedLimits)
+
+        await MainActor.run {
+            self.plans = plans
+            self.planLimits = limits
+        }
     }
 }

@@ -92,7 +92,6 @@ struct LearnView: View {
                             latestSubmissions: latestSubmissions,
                             allSubmissions: allSubmissions,
                             store: store,
-                            onSubmit: handleSubmit,
                             onRefresh: loadData
                         )
                     }
@@ -145,19 +144,9 @@ struct LearnView: View {
     }
 
     // MARK: - Submit Handler
+    // Server handles quota enforcement — no local canSubmit check needed
 
     private func handleSubmit(question: VSTEPQuestion, essayText: String) {
-        // Check submission limit before proceeding
-        let submitCheck = AIUsageManager.shared.canSubmit(
-            questionId: question.questionId,
-            store: store
-        )
-        guard submitCheck.isAllowed else {
-            errorMsg = submitCheck.deniedReason ?? "Submission limit reached."
-            showError = true
-            return
-        }
-
         let wordCount =
             essayText
             .split(separator: " ")
@@ -185,11 +174,6 @@ struct LearnView: View {
         Task { [firebaseService] in
             do {
                 let docId = try await firebaseService.submitEssay(newSubmission)
-
-                // Record usage after successful submission
-                await AIUsageManager.shared.recordSubmission(
-                    questionId: question.questionId
-                )
 
                 firebaseService.listenForGradingResult(
                     submissionId: docId,
@@ -376,8 +360,7 @@ struct RankSection: View {
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
-    let store: StoreKitManager  // Added: for usage limit display
-    var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
+    let store: StoreKitManager
     var onRefresh: (() async -> Void)? = nil
 
     private func filtered(_ pool: [VSTEPQuestion]) -> [VSTEPQuestion] {
@@ -412,9 +395,7 @@ struct RankSection: View {
                             submittedIds: submittedIds,
                             latestSubmissions: latestSubmissions,
                             allSubmissions: allSubmissions,
-                            store: store,
-                            onSubmit: onSubmit,
-                            onRefresh: onRefresh
+                            store: store
                         )
                     ) {
                         HStack(spacing: 15) {
@@ -474,8 +455,7 @@ struct TaskQuestionListView: View {
     let submittedIds: Set<String>
     let latestSubmissions: [String: UserSubmission]
     let allSubmissions: [String: [UserSubmission]]
-    let store: StoreKitManager  // Added: passed down for usage checks
-    var onSubmit: ((VSTEPQuestion, String) -> Void)? = nil
+    let store: StoreKitManager
     var onRefresh: (() async -> Void)? = nil
 
     var body: some View {
@@ -500,11 +480,7 @@ struct TaskQuestionListView: View {
                             isCompleted: submittedIds.contains(
                                 question.questionId
                             ),
-                            store: store,
-                            onSubmit: { essayText in
-                                onSubmit?(question, essayText)
-                            },
-                            onRefresh: onRefresh
+                            store: store
                         )
                     }
                     .glassEffect()
@@ -552,16 +528,8 @@ private struct QuestionRow: View {
     let latestSubmission: UserSubmission?
     let submissionHistory: [UserSubmission]
     let isCompleted: Bool
-    let store: StoreKitManager  // Added: for remaining attempts display
-    var onSubmit: ((String) -> Void)? = nil
+    let store: StoreKitManager
     var onRefresh: (() async -> Void)? = nil
-
-    private var remainingAttempts: Int {
-        AIUsageManager.shared.remainingGrading(
-            for: question.questionId,
-            store: store
-        )
-    }
 
     var body: some View {
         NavigationLink(
@@ -570,9 +538,7 @@ private struct QuestionRow: View {
                 questionNumber: number,
                 latestSubmission: isCompleted ? latestSubmission : nil,
                 submissionHistory: isCompleted ? submissionHistory : [],
-                store: store,
-                onSubmit: onSubmit,
-                onRefresh: onRefresh
+                store: store
             )
         ) {
             HStack(spacing: 15) {
@@ -637,20 +603,14 @@ private struct QuestionRow: View {
                 }
             }
         } else {
-            // Show remaining AI grading attempts for unstarted questions
-            if remainingAttempts > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "sparkles")
-                        .font(.caption2)
-                        .foregroundStyle(BrandColor.soft)
-                    Text("\(remainingAttempts) left")
-                        .font(.caption2)
-                        .foregroundStyle(BrandColor.medium)
-                }
-            } else {
-                Text("Limit reached")
+            // Unstarted question — server manages limits, show neutral state
+            HStack(spacing: 3) {
+                Image(systemName: "sparkles")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(BrandColor.soft)
+                Text("Start")
+                    .font(.caption2)
+                    .foregroundStyle(BrandColor.medium)
             }
         }
     }

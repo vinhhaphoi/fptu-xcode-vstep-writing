@@ -28,22 +28,16 @@ struct HomeView: View {
     }
 
     private var averageScore: Double? {
-        let scores = recentSubmissions.compactMap(\.score)
-        guard !scores.isEmpty else { return nil }
-        return scores.reduce(0, +) / Double(scores.count)
+        let avg = firebaseService.userProgress?.averageScore ?? 0.0
+        return avg > 0 ? avg : nil
     }
 
-    // Add these two below averageScore
     private var task1Count: Int {
-        recentSubmissions.filter {
-            firebaseService.questionMap[$0.questionId]?.taskType == "task1"
-        }.count
+        firebaseService.userProgress?.task1Completed ?? 0
     }
 
     private var task2Count: Int {
-        recentSubmissions.filter {
-            firebaseService.questionMap[$0.questionId]?.taskType == "task2"
-        }.count
+        firebaseService.userProgress?.task2Completed ?? 0
     }
 
     var body: some View {
@@ -148,7 +142,15 @@ struct HomeView: View {
         do {
             try await firebaseService.fetchQuestions()
             guard firebaseService.currentUserId != nil else { return }
-            try? await firebaseService.fetchUserProgress()
+            do {
+                try await firebaseService.fetchUserProgress()
+            } catch {
+                // Non-critical: log nhưng không block UI
+                print(
+                    "[HomeView] fetchUserProgress non-critical error: \(error.localizedDescription)"
+                )
+            }
+
             recentSubmissions = try await firebaseService.fetchUserSubmissions()
         } catch {
             errorMessage = "Failed to load data. Pull down to retry."
@@ -657,29 +659,6 @@ struct LoadingView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
-    }
-}
-
-// MARK: - Error Banner
-struct ErrorBannerView: View {
-    let message: String
-    let onRetry: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-            Text(message)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-            Button("Retry", action: onRetry)
-                .font(.subheadline.weight(.semibold))
-                .tint(BrandColor.primary)
-        }
-        .padding()
-        .glassEffect(in: .rect(cornerRadius: 12))
-        .padding(.horizontal)
     }
 }
 

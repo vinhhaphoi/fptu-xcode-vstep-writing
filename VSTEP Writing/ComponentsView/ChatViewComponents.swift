@@ -1,11 +1,7 @@
 import Combine
 import SwiftUI
 
-// ─────────────────────────────────────────────
 // MARK: - ChatViewModel
-// ─────────────────────────────────────────────
-
-// Manages all state for the VSTEP Writing chat session
 @MainActor
 final class ChatViewModel: ObservableObject {
 
@@ -25,7 +21,6 @@ final class ChatViewModel: ObservableObject {
 
     private func loadOrCreateSession() async {
         isLoadingHistory = true
-
         do {
             if let result = try await service.loadLatestChatSession() {
                 currentSessionId = result.sessionId
@@ -40,7 +35,6 @@ final class ChatViewModel: ObservableObject {
                 "[ChatViewModel] Failed to load session: \(error.localizedDescription)"
             )
         }
-
         isLoadingHistory = false
     }
 
@@ -64,25 +58,33 @@ final class ChatViewModel: ObservableObject {
         Task { await fetchAIReply(userMessage: userMessage) }
     }
 
-    // Trong fetchAIReply() — sau khi AI reply thanh cong
+    // MARK: - Fetch AI Reply
+    // Uses AIUsageManager.askAI() per Cloud Functions v3.0
+    // Server tracks chatbot quota automatically — no local increment needed
     private func fetchAIReply(userMessage: ChatMessage) async {
         isTyping = true
 
         do {
-            let reply = try await service.askAI(messages: messages)
+            // Exclude welcome message (role: .model, first item) from history sent to server
+            let historyMessages = messages.dropFirst().filter {
+                $0.id != userMessage.id
+            }
+
+            let reply = try await AIUsageManager.shared.askAI(
+                prompt: userMessage.content,
+                messages: Array(historyMessages)
+            )
+
             let aiMessage = ChatMessage(role: .model, content: reply)
             messages.append(aiMessage)
             await saveMessages([userMessage, aiMessage])
 
-            await AIUsageManager.shared.recordChatbotQuestion()
-
-        } catch AIChatError.unauthenticated {
+        } catch let error as AIUsageError {
             messages.removeLast()
-            errorMessage = AIChatError.unauthenticated.errorDescription
+            errorMessage = error.localizedDescription
         } catch {
-            errorMessage =
-                (error as? AIChatError)?.errorDescription
-                ?? error.localizedDescription
+            messages.removeLast()
+            errorMessage = error.localizedDescription
         }
 
         isTyping = false
@@ -144,14 +146,12 @@ final class ChatViewModel: ObservableObject {
         errorMessage = nil
     }
 
-    // Starts a brand new session without deleting existing history
     func startNewSession() {
         Task {
             currentSessionId = nil
             messages.removeAll()
             isTyping = false
             errorMessage = nil
-
             do {
                 currentSessionId = try await service.createChatSession()
                 messages = [makeWelcomeMessage()]
@@ -164,7 +164,6 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    // Deletes all sessions from Firestore and dismisses the sheet
     func deleteAllSessions(dismiss: DismissAction) async {
         do {
             let allSessions = try await service.fetchAllChatSessions()
@@ -173,7 +172,6 @@ final class ChatViewModel: ObservableObject {
                 try? await service.deleteChatSession(sessionId: sessionId)
             }
             sessions.removeAll()
-            // Start fresh after deleting everything
             currentSessionId = nil
             messages = [makeWelcomeMessage()]
             currentSessionId = try? await service.createChatSession()
@@ -184,15 +182,9 @@ final class ChatViewModel: ObservableObject {
         }
         dismiss()
     }
-
 }
 
-// ─────────────────────────────────────────────
 // MARK: - MessageBubbleView
-// ─────────────────────────────────────────────
-
-// Displays a single chat bubble with Markdown rendering for AI responses
-// Displays a single chat bubble with Markdown rendering for AI responses
 struct MessageBubbleView: View {
 
     let message: ChatMessage
@@ -206,7 +198,7 @@ struct MessageBubbleView: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 60) }
-            if !isUser { assistantAvatar }  // Now defined in this struct
+            if !isUser { assistantAvatar }
 
             VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
                 bubbleContent
@@ -237,13 +229,11 @@ struct MessageBubbleView: View {
         }
     }
 
-    // Avatar displayed next to AI messages — also used in TypingIndicatorView
     private var assistantAvatar: some View {
         ZStack {
             Circle()
                 .fill(Color.accentColor.opacity(0.15))
                 .frame(width: 32, height: 32)
-
             Image(systemName: "graduationcap.fill")
                 .font(.system(size: 15))
                 .foregroundColor(.accentColor)
@@ -251,11 +241,7 @@ struct MessageBubbleView: View {
     }
 }
 
-// ─────────────────────────────────────────────
 // MARK: - ChatBubbleShape
-// ─────────────────────────────────────────────
-
-// Custom bubble: user has tail on bottom-right, assistant on bottom-left
 struct ChatBubbleShape: Shape {
 
     let isUser: Bool
@@ -324,11 +310,7 @@ struct ChatBubbleShape: Shape {
     }
 }
 
-// ─────────────────────────────────────────────
 // MARK: - TypingIndicatorView
-// ─────────────────────────────────────────────
-
-// Animated three-dot bounce indicator shown while the AI is composing a reply
 struct TypingIndicatorView: View {
 
     @State private var isAnimating = false
@@ -368,7 +350,6 @@ struct TypingIndicatorView: View {
             Circle()
                 .fill(Color.accentColor.opacity(0.15))
                 .frame(width: 32, height: 32)
-
             Image(systemName: "graduationcap.fill")
                 .font(.system(size: 15))
                 .foregroundColor(.accentColor)
@@ -381,7 +362,7 @@ struct ChatInputView: View {
 
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
-    var isDisabled: Bool = false  // Added: controls locked state for free users
+    var isDisabled: Bool = false
     var onSend: () -> Void
 
     private var canSend: Bool {
@@ -420,13 +401,8 @@ struct ChatInputView: View {
         .background(Color(.systemGroupedBackground))
     }
 }
-// ChatInputView closes here
 
-// ─────────────────────────────────────────────
 // MARK: - ChatHistoryView
-// ─────────────────────────────────────────────
-
-// Sheet with two tabs: history list and new conversation action
 struct ChatHistoryView: View {
 
     @ObservedObject var viewModel: ChatViewModel
@@ -465,7 +441,6 @@ struct ChatHistoryView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // Close sheet on the left
         ToolbarItem(placement: .navigationBarLeading) {
             Button {
                 dismiss()
@@ -476,7 +451,6 @@ struct ChatHistoryView: View {
             }
         }
 
-        // Delete all on the right — only visible when sessions exist
         ToolbarItem(placement: .navigationBarTrailing) {
             if !viewModel.sessions.isEmpty {
                 Button {
@@ -492,19 +466,15 @@ struct ChatHistoryView: View {
     private var emptySessions: some View {
         VStack(spacing: 12) {
             Spacer()
-
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 52))
                 .foregroundColor(.secondary)
-
             Text("No History Yet")
                 .font(.headline)
-
             Text("Your conversations will appear here.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -543,27 +513,6 @@ struct ChatHistoryView: View {
         .scrollContentBackground(.hidden)
     }
 
-    // Reusable new conversation button
-    private var newConversationButton: some View {
-        Button {
-            viewModel.startNewSession()
-            dismiss()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.bubble.fill")
-                Text("New Conversation")
-                    .fontWeight(.semibold)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.accentColor)
-            .foregroundColor(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: Color.accentColor.opacity(0.3), radius: 8, y: 4)
-        }
-    }
-
-    // Session row: last message sender + preview + exact timestamp
     private func sessionRow(_ session: ChatSession) -> some View {
         let lastMessage = session.messages.last
         let senderLabel = lastMessage?.role == "user" ? "You" : "Assistant"

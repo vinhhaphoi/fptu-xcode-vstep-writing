@@ -1,8 +1,8 @@
+import FirebaseAuth
+import FirebaseFirestore
+import FirebaseFunctions
 import Foundation
 import Observation
-import FirebaseAuth
-import FirebaseFunctions
-internal import FirebaseFirestoreInternal
 
 // MARK: - GradingResult
 // Response model for manualGradeSubmission
@@ -29,7 +29,11 @@ class AIUsageManager {
         self.functions = Functions.functions(region: "asia-southeast1")
     }
 
-    // MARK: - Load Subscription Status from Firestore
+    func loadInitialData() async {
+        await loadSubscriptionStatus()
+    }
+
+    // MARK: - Load Subscription Status
     func loadSubscriptionStatus() async {
         guard let userId = Auth.auth().currentUser?.uid else {
             print("[AIUsageManager] No authenticated user")
@@ -45,35 +49,112 @@ class AIUsageManager {
                 .getDocument()
 
             await MainActor.run {
-                self.subscriptionTier = userDoc.data()?["subscriptionTier"] as? String ?? "free"
-                self.isSubscribed = userDoc.data()?["isSubscribed"] as? Bool ?? false
+                self.subscriptionTier =
+                    userDoc.data()?["subscriptionTier"] as? String ?? "free"
+                self.isSubscribed =
+                    userDoc.data()?["isSubscribed"] as? Bool ?? false
                 self.isLoading = false
-                print("[AIUsageManager] Tier: \(subscriptionTier), subscribed: \(isSubscribed)")
+                print(
+                    "[AIUsageManager] Tier: \(subscriptionTier), subscribed: \(isSubscribed)"
+                )
             }
         } catch {
             await MainActor.run { self.isLoading = false }
-            print("[AIUsageManager] Load subscription error: \(error.localizedDescription)")
+            print("[AIUsageManager] Load error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Chat Quota (synced from server)
+    var chatUsedToday: Int = 0
+    var chatLimitPerDay: Int = 10
+
+    var remainingChat: Int {
+        max(0, chatLimitPerDay - chatUsedToday)
+    }
+
+    var isChatLimitReached: Bool {
+        chatUsedToday >= chatLimitPerDay
+    }
+
+    // MARK: - Essay Quota (synced from server)
+    var essayUsedToday: Int = 0
+    var essayLimitPerDay: Int = 3
+    var essayGradingUsedMax: Int = 0
+    var essayGradingLimit: Int = 3
+
+    // MARK: - Insight Quota (synced from server)
+    var insightUsedThisWeek: Int = 0
+    var insightLimitPerWeek: Int = 3
+
+    // MARK: - Sync all usage + limits from server
+    func syncUsageFromServer() async {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let snap = try await Firestore.firestore()
+                .collection("users").document(uid)
+                .getDocument()
+
+            guard let data = snap.data() else { return }
+
+            if let usageMap = data["usage"] as? [String: Any] {
+                if let chatMap = usageMap["chat"] as? [String: Any] {
+                    chatUsedToday = chatMap["count"] as? Int ?? 0
+                }
+                if let essayMap = usageMap["essay"] as? [String: Any] {
+                    essayUsedToday = essayMap["count"] as? Int ?? 0
+                    let attemptsMap =
+                        essayMap["attempts"] as? [String: Int] ?? [:]
+                    essayGradingUsedMax = attemptsMap.values.max() ?? 0
+                }
+                if let insightMap = usageMap["insight"] as? [String: Any] {
+                    insightUsedThisWeek = insightMap["count"] as? Int ?? 0
+                }
+            }
+
+            if let tier = data["subscriptionTier"] as? String {
+                let planSnap = try? await Firestore.firestore()
+                    .collection("settings").document("subscription_plans")
+                    .getDocument()
+                if let plans = planSnap?.data(),
+                    let tierData = plans[tier] as? [String: Any]
+                {
+                    chatLimitPerDay = tierData["chatsPerDay"] as? Int ?? 10
+                    essayLimitPerDay = tierData["essaysPerDay"] as? Int ?? 3
+                    essayGradingLimit = tierData["gradingAttemptsPerEssay"] as? Int ?? 3
+                    insightLimitPerWeek =
+                        tierData["analyticsPerWeek"] as? Int ?? 3
+                }
+            }
+        } catch {
+            print("[AIUsageManager] Sync error: \(error.localizedDescription)")
         }
     }
 
     // MARK: - manualGradeSubmission
-    // Request:  { targetUserId: String, submissionId: String }
-    // Response: { success: Bool, result: { score, overallComment, criteria, suggestions } }
+    // Request:  { targetUserId, submissionId }
+    // Response: { success, result: { score, overallComment, criteria, suggestions } }
     func requestManualGrading(
         submissionId: String,
         targetUserId: String? = nil
     ) async throws -> GradingResult {
         guard let currentUserId = Auth.auth().currentUser?.uid else {
-            throw AIUsageError.unauthenticated(message: "Please login to use AI features.")
+            throw AIUsageError.unauthenticated(
+                message: "Please login to use AI features."
+            )
         }
 
         let data: [String: Any] = [
             "targetUserId": targetUserId ?? currentUserId,
-            "submissionId": submissionId
+            "submissionId": submissionId,
         ]
 
         do {
-            let result = try await functions.httpsCallable("manualGradeSubmission").call(data)
+            let result = try await functions.httpsCallable(
+                "manualGradeSubmission"
+            ).call(data)
 
             guard
                 let response = result.data as? [String: Any],
@@ -98,9 +179,8 @@ class AIUsageManager {
     }
 
     // MARK: - askAI
-    // Request:  { prompt: String, messages: [{ role, content }], questionId? (optional), systemPrompt? (optional) }
-    // Response: { response: String }
-    // Uses existing ChatMessage model with MessageRole enum from Models.swift
+    // Request:  { prompt, messages: [{ role, content }], questionId?, systemPrompt? }
+    // Response: { response }
     func askAI(
         prompt: String,
         messages: [ChatMessage] = [],
@@ -108,21 +188,20 @@ class AIUsageManager {
         systemPrompt: String? = nil
     ) async throws -> String {
         guard Auth.auth().currentUser != nil else {
-            throw AIUsageError.unauthenticated(message: "Please login to use AI features.")
+            throw AIUsageError.unauthenticated(
+                message: "Please login to use AI features."
+            )
         }
 
         var data: [String: Any] = [
             "prompt": prompt,
-            "messages": messages.map { ["role": $0.role.rawValue, "content": $0.content] }
+            "messages": messages.map {
+                ["role": $0.role.rawValue, "content": $0.content]
+            },
         ]
 
-        if let questionId {
-            data["questionId"] = questionId
-        }
-
-        if let systemPrompt {
-            data["systemPrompt"] = systemPrompt
-        }
+        if let questionId { data["questionId"] = questionId }
+        if let systemPrompt { data["systemPrompt"] = systemPrompt }
 
         do {
             let result = try await functions.httpsCallable("askAI").call(data)
@@ -143,34 +222,41 @@ class AIUsageManager {
     }
 
     // MARK: - analyzeUserProgress
-    // Request:  { targetLevel: String, forceRefresh: Bool }
-    // Response: { insights: UserProgressInsights, cached: Bool, updatedAt: String?, usedCount?, weeklyLimit?, weekKey? }
-    // Uses existing AnalyzeProgressResponse + UserProgressInsights from Models.swift
+    // Request:  { targetLevel, forceRefresh }
+    // Response: { insights: UserProgressInsights, cached, updatedAt?, usedCount?, weeklyLimit?, weekKey? }
     func analyzeUserProgress(
         targetLevel: String = "B1",
         forceRefresh: Bool = false
     ) async throws -> AnalyzeProgressResponse {
         guard Auth.auth().currentUser != nil else {
-            throw AIUsageError.unauthenticated(message: "Please login to use AI features.")
+            throw AIUsageError.unauthenticated(
+                message: "Please login to use AI features."
+            )
         }
 
         let data: [String: Any] = [
             "targetLevel": targetLevel,
-            "forceRefresh": forceRefresh
+            "forceRefresh": forceRefresh,
         ]
 
         do {
-            let result = try await functions.httpsCallable("analyzeUserProgress").call(data)
+            let result = try await functions.httpsCallable(
+                "analyzeUserProgress"
+            ).call(data)
 
             guard let rawData = result.data as? [String: Any] else {
                 throw AIUsageError.invalidResponse
             }
 
-            // Decode via JSONSerialization -> Codable
             let jsonData = try JSONSerialization.data(withJSONObject: rawData)
-            let response = try JSONDecoder().decode(AnalyzeProgressResponse.self, from: jsonData)
+            let response = try JSONDecoder().decode(
+                AnalyzeProgressResponse.self,
+                from: jsonData
+            )
 
-            print("[AIUsageManager] analyzeUserProgress received (cached: \(response.cached))")
+            print(
+                "[AIUsageManager] analyzeUserProgress received (cached: \(response.cached))"
+            )
             return response
 
         } catch let error as NSError {
@@ -178,20 +264,22 @@ class AIUsageManager {
         }
     }
 
-    // MARK: - verifyStoreKitPurchase (Buy / Restore)
-    // Request:  { transactionId: String, productId: String }
-    // Response: { success: Bool, tier: String, expiryDate: String }
+    // MARK: - verifyStoreKitPurchase
+    // Request:  { transactionId, productId }
+    // Response: { success, tier, expiryDate }
     func verifyStoreKitPurchase(
         transactionId: UInt64,
         productId: String
     ) async throws {
         let data: [String: Any] = [
             "transactionId": String(transactionId),
-            "productId": productId
+            "productId": productId,
         ]
 
         do {
-            let result = try await functions.httpsCallable("verifyStoreKitPurchase").call(data)
+            let result = try await functions.httpsCallable(
+                "verifyStoreKitPurchase"
+            ).call(data)
 
             guard
                 let response = result.data as? [String: Any],
@@ -202,7 +290,9 @@ class AIUsageManager {
 
             let tier = response["tier"] as? String ?? "free"
             let expiryDate = response["expiryDate"] as? String ?? ""
-            print("[AIUsageManager] StoreKit verified — tier: \(tier), expiry: \(expiryDate)")
+            print(
+                "[AIUsageManager] StoreKit verified — tier: \(tier), expiry: \(expiryDate)"
+            )
 
             await loadSubscriptionStatus()
 
@@ -213,12 +303,13 @@ class AIUsageManager {
 
     // MARK: - revokeSubscription (Refund)
     // Request:  { clearStatus: true }
-    // Response: { success: Bool }
     func revokeSubscription() async throws {
         let data: [String: Any] = ["clearStatus": true]
 
         do {
-            let result = try await functions.httpsCallable("verifyStoreKitPurchase").call(data)
+            let result = try await functions.httpsCallable(
+                "verifyStoreKitPurchase"
+            ).call(data)
 
             guard
                 let response = result.data as? [String: Any],
@@ -238,9 +329,12 @@ class AIUsageManager {
     // MARK: - UI Helper
     func canAccessAIFeatures() -> (allowed: Bool, reason: String?) {
         guard isSubscribed else {
-            return (false, "You need an active subscription to use AI features.")
+            return (
+                false, "You need an active subscription to use AI features."
+            )
         }
-        guard subscriptionTier == "advanced" || subscriptionTier == "premier" else {
+        guard subscriptionTier == "advanced" || subscriptionTier == "premier"
+        else {
             return (false, "Contact admin to assign a plan.")
         }
         return (true, nil)
@@ -249,8 +343,8 @@ class AIUsageManager {
     var tierDisplayName: String {
         switch subscriptionTier.lowercased() {
         case "advanced": return "Advanced"
-        case "premier":  return "Premier"
-        default:         return "Free"
+        case "premier": return "Premier"
+        default: return "Free"
         }
     }
 
@@ -261,17 +355,29 @@ class AIUsageManager {
 
         switch code {
         case .permissionDenied:
-            return .permissionDenied(message: message ?? "Contact admin to assign a plan.")
+            return .permissionDenied(
+                message: message ?? "Contact admin to assign a plan."
+            )
         case .failedPrecondition:
-            return .failedPrecondition(message: message ?? "Your subscription has expired.")
+            return .failedPrecondition(
+                message: message ?? "Your subscription has expired."
+            )
         case .resourceExhausted:
-            return .resourceExhausted(message: message ?? "Daily limit reached. Upgrade for more.")
+            return .resourceExhausted(
+                message: message ?? "Daily limit reached. Upgrade for more."
+            )
         case .unauthenticated:
-            return .unauthenticated(message: message ?? "Please login to use AI features.")
+            return .unauthenticated(
+                message: message ?? "Please login to use AI features."
+            )
         case .invalidArgument:
-            return .invalidArgument(message: message ?? "Invalid request parameters.")
+            return .invalidArgument(
+                message: message ?? "Invalid request parameters."
+            )
         default:
-            print("[AIUsageManager] Unknown error: \(error.localizedDescription)")
+            print(
+                "[AIUsageManager] Unknown error: \(error.localizedDescription)"
+            )
             return .unknown(message: error.localizedDescription)
         }
     }
