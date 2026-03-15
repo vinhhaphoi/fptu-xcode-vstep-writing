@@ -35,9 +35,6 @@ struct ScoreView: View {
     @StateObject private var analyticsManager = AnalyticsManager.shared
     @Environment(StoreKitManager.self) private var store
 
-    @State private var submissions: [UserSubmission] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String? = nil
     @State private var selectedGroup: QuestionAttemptGroup? = nil
     @State private var selectedTab: ScoreTab = .submissions
 
@@ -56,7 +53,7 @@ struct ScoreView: View {
     }
 
     private var groupedByQuestion: [QuestionAttemptGroup] {
-        Dictionary(grouping: submissions, by: \.questionId)
+        Dictionary(grouping: firebaseService.userSubmissions, by: \.questionId)
             .map { questionId, attempts in
                 QuestionAttemptGroup(
                     questionId: questionId,
@@ -72,7 +69,7 @@ struct ScoreView: View {
     }
 
     private var gradedSubmissions: [UserSubmission] {
-        submissions.filter { $0.score != nil }.sorted {
+        firebaseService.userSubmissions.filter { $0.score != nil }.sorted {
             $0.submittedAt < $1.submittedAt
         }
     }
@@ -132,14 +129,10 @@ struct ScoreView: View {
                 .padding(.horizontal)
 
                 // Tab Content
-                if isLoading && submissions.isEmpty {
+                if firebaseService.isLoading && firebaseService.userSubmissions.isEmpty {
                     ProgressView("Loading submissions...")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
-                } else if let error = errorMessage {
-                    ErrorBannerView(message: error) {
-                        Task { await loadSubmissions() }
-                    }
                 } else {
                     tabContentView
                 }
@@ -152,7 +145,7 @@ struct ScoreView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Score")
         .toolbarTitleDisplayMode(.large)
-        .refreshable { await loadSubmissions() }
+        .refreshable { firebaseService.listenUserSubmissions() }
         .navigationDestination(item: $selectedGroup) { group in
             if let question = group.question {
                 QuestionDetailView(
@@ -170,12 +163,14 @@ struct ScoreView: View {
                 try? await firebaseService.fetchQuestions()
             }
             listenServerStats()
-            await loadSubmissions()
+            firebaseService.listenUserSubmissions()
             await AIUsageManager.shared.syncUsageFromServer()
         }
         .onDisappear {
             statsListener?.remove()
             statsListener = nil
+            // Keep userSubmissionsListener alive — it updates ScoreView from the background.
+            // Only stop it if user logs out (handled in VSTEP_WritingApp).
         }
     }
 
@@ -276,31 +271,10 @@ struct ScoreView: View {
             }
     }
 
-    // MARK: - Load Submissions
-
-    private func loadSubmissions() async {
-        guard firebaseService.currentUserId != nil, !isLoading else { return }
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-        do {
-            submissions = try await firebaseService.fetchUserSubmissions()
-            // Fallback: if server hasn't written stats yet (e.g. new admin account,
-            // no graded submissions trigger ran), recalculate locally.
-            // By this point fetchQuestions() has already run, so
-            // questionMap is populated and task counts will be correct.
-            if serverTotalSubmissions == 0 && !submissions.isEmpty {
-                recalculateStatsLocally()
-            }
-        } catch {
-            errorMessage = "Failed to load submissions."
-        }
-    }
-
     // MARK: - Local Stats Fallback
 
     private func recalculateStatsLocally() {
-        let graded = submissions.filter { $0.status == .graded && $0.score != nil }
+        let graded = firebaseService.userSubmissions.filter { $0.status == .graded && $0.score != nil }
         serverAverageScore =
             graded.isEmpty
             ? nil

@@ -52,6 +52,39 @@ extension FirebaseService {
         return results
     }
 
+    // MARK: - Real-time Submissions Listener
+    /// Call once (e.g. from ScoreView.task). Updates `userSubmissions` automatically.
+    func listenUserSubmissions() {
+        guard let userId = currentUserId else { return }
+        userSubmissionsListener?.remove()
+
+        userSubmissionsListener = db
+            .collection("submissions")
+            .document(userId)
+            .collection("submissions")
+            .order(by: "submittedAt", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                if let error {
+                    print("[FirebaseService] userSubmissions listener error: \(error.localizedDescription)")
+                    return
+                }
+                guard let self, let snapshot else { return }
+                var results: [UserSubmission] = []
+                for doc in snapshot.documents {
+                    if let sub = try? doc.data(as: UserSubmission.self) {
+                        results.append(sub)
+                    }
+                }
+                self.userSubmissions = results
+                print("[FirebaseService] userSubmissions updated — \(results.count) docs")
+            }
+    }
+
+    func stopListeningUserSubmissions() {
+        userSubmissionsListener?.remove()
+        userSubmissionsListener = nil
+    }
+
     // MARK: - Fetch Submissions for Question
     func fetchSubmissions(forQuestionId questionId: String) async throws
         -> [UserSubmission]
@@ -115,6 +148,7 @@ extension FirebaseService {
     func listenForGradingResult(
         submissionId: String,
         questionId: String,
+        gradingMethod: GradingMethod = .normal,
         onChange: @escaping (UserSubmission) -> Void,
         onTimeout: @escaping () -> Void
     ) {
@@ -159,13 +193,23 @@ extension FirebaseService {
 
         submissionListeners[questionId] = listener
 
-        // Timeout: 120s
+        // Only apply a timeout for AI grading (120s) and Quick grading (300s)
+        // Normal queue has no timeout — a teacher may grade hours later
+        let timeoutSeconds: UInt64?
+        switch gradingMethod {
+        case .ai:     timeoutSeconds = 120
+        case .quick:  timeoutSeconds = 300
+        case .normal: timeoutSeconds = nil
+        }
+
+        guard let seconds = timeoutSeconds else { return }
+
         Task {
-            try? await Task.sleep(for: .seconds(120))
+            try? await Task.sleep(for: .seconds(seconds))
             guard self.submissionListeners[questionId] != nil else { return }
 
             print(
-                "[FirebaseService] Timeout: submission \(submissionId) exceeded 120s"
+                "[FirebaseService] Timeout: submission \(submissionId) exceeded \(seconds)s"
             )
             self.stopListening(forQuestionId: questionId)
 

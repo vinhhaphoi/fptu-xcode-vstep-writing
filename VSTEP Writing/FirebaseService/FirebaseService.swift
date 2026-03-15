@@ -36,6 +36,11 @@ class FirebaseService: ObservableObject {
 
     // MARK: - Submission Listeners
     var submissionListeners: [String: ListenerRegistration] = [:]
+    var userSubmissionsListener: ListenerRegistration?
+
+    // MARK: - Real-time Submissions State
+    /// Automatically updated by listenUserSubmissions(). ScoreView observes this.
+    @Published var userSubmissions: [UserSubmission] = []
 
     private init() {}
 }

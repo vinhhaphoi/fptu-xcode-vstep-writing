@@ -22,6 +22,7 @@ struct QuestionDetailView: View {
     @State private var selectedGradingMethod: GradingMethod = .normal
     @State private var showGradingMethodPicker = false
     @State private var showSubmitConfirm = false
+    @State private var showSubmitSuccess = false
 
     private var taskColor: Color {
         question.isTask1 ? BrandColor.light : BrandColor.medium
@@ -97,6 +98,41 @@ struct QuestionDetailView: View {
             // Set default method based on subscription on appear
             selectedGradingMethod = availableGradingMethods.first ?? .normal
         }
+        // Immediate success toast overlay
+        .overlay(alignment: .top) {
+            if showSubmitSuccess {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.white)
+                        .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Essay submitted!")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        Text("We'll notify you when grading is complete.")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(BrandColor.primary)
+                .clipShape(.rect(cornerRadius: 14))
+                .shadow(color: BrandColor.primary.opacity(0.35), radius: 10, y: 4)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        withAnimation(.easeOut(duration: 0.4)) {
+                            showSubmitSuccess = false
+                        }
+                    }
+                }
+            }
+        }
+        .animation(.spring(duration: 0.4), value: showSubmitSuccess)
     }
 
     // MARK: - Toolbar
@@ -357,7 +393,8 @@ struct QuestionDetailView: View {
             .glassEffect(in: .rect(cornerRadius: 12))
 
             Button {
-                showGradingMethodPicker = true
+                guard wordCount >= minWords, !isSubmitting else { return }
+                showSubmitConfirm = true
             } label: {
                 Group {
                     if isSubmitting {
@@ -616,7 +653,12 @@ struct QuestionDetailView: View {
                 }
             )
 
-            await MainActor.run { isSubmitting = false }
+            await MainActor.run {
+                isSubmitting = false
+                withAnimation(.spring(duration: 0.4)) {
+                    showSubmitSuccess = true
+                }
+            }
             await onRefresh?()
 
         } catch let error as AIUsageError {
@@ -857,10 +899,20 @@ private struct SubmissionReviewView: View {
     }
 
     private var gradedByLabel: String {
+        // If explicitly graded by an AI fallback/cron job
+        if let gradedBy = submission.gradedBy, gradedBy.starts(with: "ai_") {
+            return "Graded by Gemini AI (Fallback)"
+        }
+        
         switch submission.gradingMethod {
-        case .ai: return "Graded by Gemini AI"
-        case .quick: return "Graded via Quick Grading"
-        case .normal: return "Graded by Teacher"
+        case .ai: 
+            return "Graded by Gemini AI"
+        case .quick, .normal:
+            let graderStr = submission.gradedByName ?? submission.assignedTeacherEmail
+            if let grader = graderStr, !grader.isEmpty, grader != "Teacher" {
+                return "Graded by \(grader)"
+            }
+            return submission.gradingMethod == .quick ? "Graded via Quick Grading" : "Graded by Teacher"
         }
     }
 
@@ -1012,8 +1064,9 @@ private struct CriterionRow: View {
                 }
             }
 
-            if let feedback = criterion.feedback, !feedback.isEmpty {
-                Text(feedback.markdownAttributed())
+            let displayComment = criterion.comment ?? criterion.feedback
+            if let comment = displayComment, !comment.isEmpty {
+                Text(comment.markdownAttributed())
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

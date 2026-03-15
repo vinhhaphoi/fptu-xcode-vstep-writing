@@ -136,6 +136,9 @@ struct UserSubmission: Identifiable, Codable, Equatable {
     var gradingMethod: GradingMethod = .normal
     var priority: SubmissionPriority = .normal
     var assignedTeacherId: String? = nil
+    var assignedTeacherEmail: String? = nil
+    var gradedBy: String? = nil
+    var gradedByName: String? = nil
     var gradedAt: Date? = nil
     var errorMessage: String? = nil
 
@@ -144,7 +147,7 @@ struct UserSubmission: Identifiable, Codable, Equatable {
         case userId, questionId, content, wordCount, submittedAt
         case score, feedback, overallComment, suggestions
         case criteria, status, essayText
-        case gradingMethod, priority, assignedTeacherId, gradedAt, errorMessage
+        case gradingMethod, priority, assignedTeacherId, assignedTeacherEmail, gradedBy, gradedByName, gradedAt, errorMessage
     }
 
     // Manual memberwise initializer (since adding init(from:) removes the synthesized one)
@@ -165,6 +168,9 @@ struct UserSubmission: Identifiable, Codable, Equatable {
         gradingMethod: GradingMethod = .normal,
         priority: SubmissionPriority = .normal,
         assignedTeacherId: String? = nil,
+        assignedTeacherEmail: String? = nil,
+        gradedBy: String? = nil,
+        gradedByName: String? = nil,
         gradedAt: Date? = nil,
         errorMessage: String? = nil
     ) {
@@ -184,6 +190,9 @@ struct UserSubmission: Identifiable, Codable, Equatable {
         self.gradingMethod = gradingMethod
         self.priority = priority
         self.assignedTeacherId = assignedTeacherId
+        self.assignedTeacherEmail = assignedTeacherEmail
+        self.gradedBy = gradedBy
+        self.gradedByName = gradedByName
         self.gradedAt = gradedAt
         self.errorMessage = errorMessage
     }
@@ -214,6 +223,9 @@ struct UserSubmission: Identifiable, Codable, Equatable {
         gradingMethod       = try c.decodeIfPresent(GradingMethod.self,      forKey: .gradingMethod)  ?? .normal
         priority            = try c.decodeIfPresent(SubmissionPriority.self, forKey: .priority)       ?? .normal
         assignedTeacherId   = try c.decodeIfPresent(String.self,             forKey: .assignedTeacherId)
+        assignedTeacherEmail = try c.decodeIfPresent(String.self,            forKey: .assignedTeacherEmail)
+        gradedBy            = try c.decodeIfPresent(String.self,             forKey: .gradedBy)
+        gradedByName        = try c.decodeIfPresent(String.self,             forKey: .gradedByName)
         gradedAt            = try c.decodeIfPresent(Date.self,               forKey: .gradedAt)
         errorMessage        = try c.decodeIfPresent(String.self,             forKey: .errorMessage)
     }
@@ -226,6 +238,7 @@ struct SubmissionCriterion: Codable, Hashable {
     let score: Double?
     let band: String?
     let feedback: String?
+    let comment: String? // Added to match web app
 }
 
 // MARK: - Question Attempt Group

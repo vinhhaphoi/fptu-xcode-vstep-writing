@@ -13,6 +13,7 @@ struct LearnView: View {
     @State private var selectedRankID: String? = nil
     @State private var searchText = ""
     @State private var isSearchPresented = false
+    @State private var isRefreshing = false
 
     private let cacheKey = "cached_latest_submissions"
 
@@ -92,7 +93,10 @@ struct LearnView: View {
                             latestSubmissions: latestSubmissions,
                             allSubmissions: allSubmissions,
                             store: store,
-                            onRefresh: loadData
+                            onRefresh: {
+                                guard !isRefreshing else { return }
+                                await loadData()
+                            }
                         )
                     }
 
@@ -226,6 +230,9 @@ struct LearnView: View {
     // MARK: - Data Loading
 
     private func loadData() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
         do {
             try await firebaseService.fetchQuestions()
             guard firebaseService.currentUserId != nil else { return }
