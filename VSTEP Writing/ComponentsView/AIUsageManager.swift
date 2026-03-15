@@ -109,8 +109,8 @@ class AIUsageManager {
                         essayMap["attempts"] as? [String: Int] ?? [:]
                     essayGradingUsedMax = attemptsMap.values.max() ?? 0
                 }
-                if let insightMap = usageMap["insight"] as? [String: Any] {
-                    insightUsedThisWeek = insightMap["count"] as? Int ?? 0
+                if let analyticsMap = usageMap["analytics"] as? [String: Any] {
+                    insightUsedThisWeek = analyticsMap["count"] as? Int ?? 0
                 }
             }
 
