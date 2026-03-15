@@ -606,7 +606,7 @@ struct ProfileView: View {
             Text("VSTEP Writing")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("Version 1.0.0")
+            Text("Version 2.2.0")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
             Text("Powered by Vinhhaphoi from NTHT x Vinhhaphoi")
