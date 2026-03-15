@@ -24,6 +24,11 @@ class SessionManager: NSObject, ObservableObject, WCSessionDelegate {
             print("[SessionManager] Session not activated yet")
             return
         }
+        print("[WC] isPaired=\(WCSession.default.isPaired)")
+        print("[WC] isWatchAppInstalled=\(WCSession.default.isWatchAppInstalled)")
+        print("[WC] activationState=\(WCSession.default.activationState.rawValue)")
+        print("[WC] isReachable=\(WCSession.default.isReachable)")
+
 
         if WCSession.default.isReachable {
             // Watch dang mo - gui truc tiep

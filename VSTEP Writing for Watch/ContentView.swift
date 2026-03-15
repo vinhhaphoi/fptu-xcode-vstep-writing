@@ -14,46 +14,55 @@ struct ContentView: View {
         }
     }
 }
+// Dung nhat quan cho ca WaitingSyncView va HomeWatchView
+private var watchBackground: Color {
+    Color(red: 0.92, green: 0.95, blue: 0.94)
+}
 
 // MARK: - Waiting Sync View
 struct WaitingSyncView: View {
     @State private var isAnimating = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(BrandColor.primary.opacity(0.2), lineWidth: 3)
-                    .frame(width: 52, height: 52)
-                Circle()
-                    .trim(from: 0, to: 0.7)
-                    .stroke(BrandColor.primary, lineWidth: 3)
-                    .frame(width: 52, height: 52)
-                    .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                    .animation(
-                        .linear(duration: 1.2).repeatForever(
-                            autoreverses: false
-                        ),
-                        value: isAnimating
-                    )
-                Image(systemName: "iphone.and.arrow.forward.inward")
-                    .font(.system(size: 18))
-                    .foregroundStyle(BrandColor.primary)
+        ZStack {
+            watchBackground
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .stroke(BrandColor.primary.opacity(0.2), lineWidth: 3)
+                        .frame(width: 52, height: 52)
+                    Circle()
+                        .trim(from: 0, to: 0.7)
+                        .stroke(BrandColor.primary, lineWidth: 3)
+                        .frame(width: 52, height: 52)
+                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                        .animation(
+                            .linear(duration: 1.2).repeatForever(
+                                autoreverses: false
+                            ),
+                            value: isAnimating
+                        )
+                    Image(systemName: "iphone.and.arrow.forward.inward")
+                        .font(.system(size: 18))
+                        .foregroundStyle(BrandColor.primary)
+                }
+
+                Text("Waiting for iPhone")
+                    .font(.headline)
+                    .foregroundStyle(.black)
+
+                Text("Open VSTEP Writing on your iPhone to sync data")
+                    .font(.caption2)
+                    .foregroundStyle(.gray)
+                    .multilineTextAlignment(.center)
             }
-
-            Text("Waiting for iPhone")
-                .font(.headline)
-                .foregroundStyle(.primary)
-
-            Text("Open VSTEP Writing on your iPhone to sync data")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            .padding(16)
+            .glassEffect(in: .rect(cornerRadius: 16.0))
+            .padding(.horizontal, 8)
+            .onAppear { isAnimating = true }
         }
-        .padding(16)
-        .glassEffect(in: .rect(cornerRadius: 16.0))
-        .padding(.horizontal, 8)
-        .onAppear { isAnimating = true }
     }
 }
 
@@ -62,17 +71,23 @@ struct HomeWatchView: View {
     @StateObject private var session = WatchSessionManager.shared
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                greetingSection
-                scoreHeaderSection
-                if session.scoreHistory.count >= 2 {
-                    scoreTrendChartSection
+        ZStack {
+            // iOS systemGroupedBackground light mode equivalent
+            watchBackground
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    greetingSection
+                    scoreHeaderSection
+                    if session.scoreHistory.count >= 2 {
+                        scoreTrendChartSection
+                    }
+                    recentActivitySection
                 }
-                recentActivitySection
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
         }
     }
 
@@ -80,27 +95,27 @@ struct HomeWatchView: View {
     private var greetingSection: some View {
         VStack(alignment: .leading, spacing: 2) {
             (Text("Hello, ")
-                .foregroundStyle(.primary)
+                .foregroundStyle(.black)
                 + Text(session.displayName)
                 .foregroundStyle(BrandColor.primary)
                 + Text("!")
-                .foregroundStyle(.primary))
+                .foregroundStyle(.black))
                 .font(.headline)
             Text("Ready to write?")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.gray)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    // MARK: - Score Header (mirrors ScoreHeaderView on iOS)
+    // MARK: - Score Header
     private var scoreHeaderSection: some View {
         VStack(spacing: 8) {
             Text("Overall Score")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.gray)
 
             if let avg = session.averageScore {
                 Text(String(format: "%.1f", avg))
@@ -110,10 +125,9 @@ struct HomeWatchView: View {
             } else {
                 Text("—")
                     .font(.system(size: 36, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.gray)
             }
 
-            // Stat chips — mirrors iOS StatChip row
             HStack(spacing: 12) {
                 WatchStatChip(
                     icon: "doc.text.fill",
@@ -140,7 +154,7 @@ struct HomeWatchView: View {
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
-    // MARK: - Score Trend Chart (mirrors ScoreTrendSection on iOS using Canvas)
+    // MARK: - Score Trend Chart
     private var scoreTrendChartSection: some View {
         WatchScoreTrendChart(entries: session.scoreHistory)
     }
@@ -163,7 +177,7 @@ struct HomeWatchView: View {
                             .frame(width: 3, height: 32)
                         Text(topic)
                             .font(.caption)
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(.black)
                             .lineLimit(2)
                         Spacer()
                         if index < session.recentScores.count {
@@ -195,7 +209,7 @@ struct HomeWatchView: View {
     }
 }
 
-// MARK: - Watch Stat Chip (mirrors iOS StatChip)
+// MARK: - Watch Stat Chip
 struct WatchStatChip: View {
     let icon: String
     let value: String
@@ -209,10 +223,10 @@ struct WatchStatChip: View {
                 .font(.caption2)
             Text(value)
                 .font(.subheadline.bold())
-                .foregroundStyle(.primary)
+                .foregroundStyle(.black)
             Text(label)
                 .font(.system(size: 8))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.gray)
         }
     }
 }

@@ -551,6 +551,31 @@ struct VSTEPRank: Identifiable {
     }
 }
 
+// MARK: - AIUsageError
+enum AIUsageError: LocalizedError {
+    case permissionDenied(message: String)
+    case failedPrecondition(message: String)
+    case resourceExhausted(message: String)
+    case unauthenticated(message: String)
+    case invalidArgument(message: String)
+    case invalidResponse
+    case unknown(message: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .permissionDenied(let m),
+            .failedPrecondition(let m),
+            .resourceExhausted(let m),
+            .unauthenticated(let m),
+            .invalidArgument(let m),
+            .unknown(let m):
+            return m
+        case .invalidResponse:
+            return "Invalid response from server."
+        }
+    }
+}
+
 extension VSTEPRank {
     static let allRanks: [VSTEPRank] = [
         VSTEPRank(
