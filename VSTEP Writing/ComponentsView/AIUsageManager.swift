@@ -86,6 +86,11 @@ class AIUsageManager {
     var insightUsedThisWeek: Int = 0
     var insightLimitPerWeek: Int = 3
 
+    // MARK: - Token Usage (synced from server)
+    // Server stores cumulative total in users/{uid}.stats.totalTokensUsed
+    // via the tokenUsage collection (trackTokenUsage function)
+    var totalTokensUsed: Int = 0
+
     // MARK: - Sync all usage + limits from server
     func syncUsageFromServer() async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
@@ -100,18 +105,26 @@ class AIUsageManager {
             guard let data = snap.data() else { return }
 
             if let usageMap = data["usage"] as? [String: Any] {
+                // Chat quota
                 if let chatMap = usageMap["chat"] as? [String: Any] {
                     chatUsedToday = chatMap["count"] as? Int ?? 0
                 }
+                // Essay quota
                 if let essayMap = usageMap["essay"] as? [String: Any] {
                     essayUsedToday = essayMap["count"] as? Int ?? 0
                     let attemptsMap =
                         essayMap["attempts"] as? [String: Int] ?? [:]
                     essayGradingUsedMax = attemptsMap.values.max() ?? 0
                 }
+                // Analytics / insight quota
                 if let analyticsMap = usageMap["analytics"] as? [String: Any] {
                     insightUsedThisWeek = analyticsMap["count"] as? Int ?? 0
                 }
+            }
+
+            // Cumulative token count stored in stats.totalTokensUsed by trackTokenUsage()
+            if let statsMap = data["stats"] as? [String: Any] {
+                totalTokensUsed = statsMap["totalTokensUsed"] as? Int ?? 0
             }
 
             if let tier = data["subscriptionTier"] as? String {
@@ -123,7 +136,8 @@ class AIUsageManager {
                 {
                     chatLimitPerDay = tierData["chatsPerDay"] as? Int ?? 10
                     essayLimitPerDay = tierData["essaysPerDay"] as? Int ?? 3
-                    essayGradingLimit = tierData["gradingAttemptsPerEssay"] as? Int ?? 3
+                    essayGradingLimit =
+                        tierData["gradingAttemptsPerEssay"] as? Int ?? 3
                     insightLimitPerWeek =
                         tierData["analyticsPerWeek"] as? Int ?? 3
                 }

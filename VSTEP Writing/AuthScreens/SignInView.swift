@@ -18,6 +18,7 @@ struct SignInView: View {
     @State private var isShowingTerms = false
     @State private var isShowingPrivacy = false
     @State private var isShowingContact = false
+    @State private var isShowingForgotPassword = false
 
     @FocusState private var focusedField: Field?
 
@@ -35,8 +36,6 @@ struct SignInView: View {
     }
 
     private var showEmailError: Bool {
-        // Case 1: user typed something but format is wrong
-        // Case 2: user tried to submit but email is empty
         (!email.isEmpty && !isEmailValid) || (didAttemptSubmit && email.isEmpty)
     }
 
@@ -84,6 +83,11 @@ struct SignInView: View {
         .onTapGesture {
             focusedField = nil
         }
+        .sheet(isPresented: $isShowingForgotPassword) {
+            ForgotPasswordView(prefillEmail: email)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
     }
 
     // MARK: - Header
@@ -107,7 +111,6 @@ struct SignInView: View {
     // MARK: - Form
     private var formSection: some View {
         VStack(spacing: 16) {
-            // Email field
             FloatingLabelField(
                 label: "Email",
                 systemImage: "envelope",
@@ -134,7 +137,6 @@ struct SignInView: View {
                 }
             }
 
-            // Password field
             FloatingLabelField(
                 label: "Password",
                 systemImage: "lock",
@@ -166,7 +168,6 @@ struct SignInView: View {
                 .buttonStyle(.plain)
             }
 
-            // Error banner
             if !errorMessage.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -181,18 +182,17 @@ struct SignInView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            // Forgot password
             HStack {
                 Spacer()
                 Button("Forgot password?") {
-                    // TODO: Handle forgot password
+                    focusedField = nil
+                    isShowingForgotPassword = true
                 }
                 .font(.footnote)
                 .foregroundStyle(.blue)
             }
             .padding(.horizontal, 4)
 
-            // Sign In button
             signInButton
         }
     }
@@ -221,7 +221,6 @@ struct SignInView: View {
             .opacity(isButtonDisabled ? 0.6 : 1)
             .animation(.easeInOut(duration: 0.2), value: isButtonDisabled)
 
-            // Face ID only when Firebase session still alive (not after explicit sign out)
             if BiometricAuthService.shared.isAvailable
                 && Auth.auth().currentUser != nil
             {
@@ -230,8 +229,7 @@ struct SignInView: View {
                 } label: {
                     Image(
                         systemName: BiometricAuthService.shared.biometricType
-                            == .faceID
-                            ? "faceid" : "touchid"
+                            == .faceID ? "faceid" : "touchid"
                     )
                     .font(.system(size: 22, weight: .medium))
                     .foregroundStyle(.primary)
@@ -288,35 +286,6 @@ struct SignInView: View {
         }
     }
 
-    private func handleBiometricSignIn() async {
-        do {
-            try await BiometricAuthService.shared.authenticate()
-
-            await MainActor.run {
-                // Biometric passed - check if Firebase session still valid
-                if Auth.auth().currentUser != nil {
-                    // Session still alive, just unlock
-                    if !authManager.isBiometricLoginEnabled {
-                        authManager.isBiometricLoginEnabled = true
-                    }
-                    onLoginSuccess?()
-                } else {
-                    // Firebase session expired - fill email, user must sign in manually
-                    // Biometric only pre-fills, cannot re-auth without credentials
-                    withAnimation {
-                        errorMessage = "Session expired. Please sign in again."
-                    }
-                }
-            }
-        } catch BiometricError.cancelled {
-            // Do nothing
-        } catch {
-            await MainActor.run {
-                withAnimation { errorMessage = error.localizedDescription }
-            }
-        }
-    }
-
     // MARK: - Footer
     private var footerSection: some View {
         VStack(spacing: 10) {
@@ -342,7 +311,6 @@ struct SignInView: View {
                     .font(.caption)
             }
 
-            // Contact us link
             Button("Need help? Contact us") { isShowingContact = true }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -359,18 +327,36 @@ struct SignInView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        // Contact sheet
         .sheet(isPresented: $isShowingContact) {
             NavigationStack {
                 ContactInfoView()
-                //                    .toolbar {
-                //                        ToolbarItem(placement: .topBarTrailing) {
-                //                            Button("Done") { isShowingContact = false }
-                //                        }
-                //                    }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+    }
+
+    // MARK: - Biometric Sign In
+    private func handleBiometricSignIn() async {
+        do {
+            try await BiometricAuthService.shared.authenticate()
+            await MainActor.run {
+                if Auth.auth().currentUser != nil {
+                    if !authManager.isBiometricLoginEnabled {
+                        authManager.isBiometricLoginEnabled = true
+                    }
+                    onLoginSuccess?()
+                } else {
+                    withAnimation {
+                        errorMessage = "Session expired. Please sign in again."
+                    }
+                }
+            }
+        } catch BiometricError.cancelled {
+        } catch {
+            await MainActor.run {
+                withAnimation { errorMessage = error.localizedDescription }
+            }
         }
     }
 
@@ -386,7 +372,6 @@ struct SignInView: View {
         }
         do {
             try await authManager.signIn(email: email, password: password)
-            // Notify RootView login succeeded
             await MainActor.run { onLoginSuccess?() }
         } catch {
             await MainActor.run {
@@ -405,7 +390,6 @@ struct SignInView: View {
         }
         do {
             try await authManager.signInWithGoogle()
-            // Notify RootView login succeeded
             await MainActor.run { onLoginSuccess?() }
         } catch {
             await MainActor.run {
@@ -422,28 +406,258 @@ struct SignInView: View {
         let code = (error as NSError).code
         switch code {
         case 17004, 17009:
-            // Wrong password or invalid credential
             return "Incorrect email or password. Please try again."
         case 17011:
-            // User not found
             return "No account found with this email."
         case 17010:
-            // Too many requests
             return "Too many attempts. Please wait a moment and try again."
         case 17020:
-            // Network error
             return "No internet connection. Please check your network."
         case 17005:
-            // User disabled
             return "This account has been disabled. Please contact support."
         case 17026:
-            // Weak password (for sign up, just in case)
             return "Password is too weak. Please choose a stronger one."
         default:
             return "Something went wrong. Please try again."
         }
     }
+}
 
+// MARK: - ForgotPasswordView
+struct ForgotPasswordView: View {
+
+    var prefillEmail: String = ""
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var email: String = ""
+    @State private var isLoading = false
+    @State private var sentSuccessfully = false
+    @State private var errorMessage = ""
+
+    private var isEmailValid: Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        return NSPredicate(format: "SELF MATCHES %@", emailRegex).evaluate(
+            with: email
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 28) {
+                // Icon + header
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue.opacity(0.1))
+                            .frame(width: 72, height: 72)
+                        Image(systemName: "lock.rotation")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.blue)
+                    }
+
+                    Text("Reset Password")
+                        .font(.title2.bold())
+
+                    Text(
+                        "Enter your email and we'll send you a link to reset your password."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+                }
+                .padding(.top, 8)
+
+                if sentSuccessfully {
+                    successView
+                } else {
+                    inputView
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .background(Color(.systemGroupedBackground))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.title3)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Pre-fill email if user had already typed it on the sign-in screen
+            if email.isEmpty {
+                email = prefillEmail
+            }
+        }
+    }
+
+    // MARK: - Input View
+    private var inputView: some View {
+        VStack(spacing: 16) {
+            FloatingLabelField(
+                label: "Email",
+                systemImage: "envelope",
+                tint: .blue,
+                error: (!email.isEmpty && !isEmailValid)
+                    ? "Invalid email format" : nil
+            ) {
+                TextField("", text: $email)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    .autocorrectionDisabled()
+                    .submitLabel(.send)
+                    .onSubmit { Task { await sendReset() } }
+            } trailingView: {
+                if !email.isEmpty {
+                    Image(
+                        systemName: isEmailValid
+                            ? "checkmark.circle.fill" : "xmark.circle.fill"
+                    )
+                    .foregroundStyle(isEmailValid ? .green : .red)
+                    .font(.system(size: 18))
+                }
+            }
+
+            if !errorMessage.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            Button {
+                Task { await sendReset() }
+            } label: {
+                Group {
+                    if isLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text("Send Reset Link")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .glassEffect(.regular.tint(.blue).interactive(), in: .capsule)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEmailValid || isLoading)
+            .opacity(!isEmailValid || isLoading ? 0.6 : 1)
+            .animation(.easeInOut(duration: 0.2), value: isEmailValid)
+        }
+    }
+
+    // MARK: - Success View
+    private var successView: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.12))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 36))
+                    .foregroundStyle(.green)
+            }
+            .transition(.scale.combined(with: .opacity))
+
+            Text("Email Sent!")
+                .font(.headline)
+
+            Text(
+                "Check your inbox at **\(email)** and follow the link to reset your password."
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+
+            // Note for Google users who accidentally landed here
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(
+                    "If you signed up with Google, your password is managed by Google."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .glassEffect(in: .rect(cornerRadius: 10))
+
+            Button {
+                dismiss()
+            } label: {
+                Text("Done")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .glassEffect(
+                        .regular.tint(.blue).interactive(),
+                        in: .capsule
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .animation(.spring(duration: 0.4), value: sentSuccessfully)
+    }
+
+    // MARK: - Send Reset Email
+    private func sendReset() async {
+        guard isEmailValid else { return }
+
+        await MainActor.run {
+            isLoading = true
+            errorMessage = ""
+        }
+
+        do {
+            try await Auth.auth().sendPasswordReset(withEmail: email)
+            await MainActor.run {
+                isLoading = false
+                withAnimation(.spring(duration: 0.4)) {
+                    sentSuccessfully = true
+                }
+            }
+        } catch {
+            await MainActor.run {
+                isLoading = false
+                errorMessage = friendlyResetError(from: error)
+            }
+        }
+    }
+
+    // MARK: - Error Mapping
+    private func friendlyResetError(from error: Error) -> String {
+        let code = (error as NSError).code
+        switch code {
+        case 17011:
+            return "No account found with this email."
+        case 17020:
+            return "No internet connection. Please check your network."
+        case 17010:
+            return "Too many requests. Please wait a moment and try again."
+        default:
+            return "Something went wrong. Please try again."
+        }
+    }
 }
 
 // MARK: - FloatingLabelField
@@ -482,7 +696,6 @@ struct FloatingLabelField<Input: View, Trailing: View>: View {
             )
             .animation(.easeInOut(duration: 0.2), value: error != nil)
 
-            // Inline error message
             if let error {
                 HStack(spacing: 5) {
                     Image(systemName: "info.circle")

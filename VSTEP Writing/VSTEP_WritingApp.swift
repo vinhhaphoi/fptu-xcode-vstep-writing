@@ -6,6 +6,7 @@ import FirebaseMessaging
 import GoogleSignIn
 import SwiftUI
 import UserNotifications
+import Firebase
 
 // MARK: - AppDelegate
 class AppDelegate: NSObject, UIApplicationDelegate {

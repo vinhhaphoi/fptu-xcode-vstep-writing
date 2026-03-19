@@ -1,6 +1,24 @@
 import FirebaseAuth
 import SwiftUI
 
+// MARK: - GradingDurationHelper
+// Shared helper to format elapsed time between submission and grading
+private func gradingDurationText(from start: Date, to end: Date) -> String {
+    let seconds = Int(end.timeIntervalSince(start))
+    guard seconds >= 0 else { return "—" }
+    if seconds < 60 {
+        return "\(seconds)s"
+    } else if seconds < 3600 {
+        let m = seconds / 60
+        let s = seconds % 60
+        return s > 0 ? "\(m)m \(s)s" : "\(m)m"
+    } else {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        return m > 0 ? "\(h)h \(m)m" : "\(h)h"
+    }
+}
+
 // MARK: - QuestionDetailView
 struct QuestionDetailView: View {
 
@@ -23,6 +41,9 @@ struct QuestionDetailView: View {
     @State private var showGradingMethodPicker = false
     @State private var showSubmitConfirm = false
     @State private var showSubmitSuccess = false
+
+    // Guard against double-submit from rapid confirmation dialog taps
+    @State private var hasSubmittedThisSession = false
 
     private var taskColor: Color {
         question.isTask1 ? BrandColor.light : BrandColor.medium
@@ -93,12 +114,11 @@ struct QuestionDetailView: View {
         .onChange(of: latestSubmission) {
             isSubmitting = false
             isResubmitting = false
+            hasSubmittedThisSession = false
         }
         .task {
-            // Set default method based on subscription on appear
             selectedGradingMethod = availableGradingMethods.first ?? .normal
         }
-        // Immediate success toast overlay
         .overlay(alignment: .top) {
             if showSubmitSuccess {
                 HStack(spacing: 10) {
@@ -119,7 +139,11 @@ struct QuestionDetailView: View {
                 .padding(.vertical, 12)
                 .background(BrandColor.primary)
                 .clipShape(.rect(cornerRadius: 14))
-                .shadow(color: BrandColor.primary.opacity(0.35), radius: 10, y: 4)
+                .shadow(
+                    color: BrandColor.primary.opacity(0.35),
+                    radius: 10,
+                    y: 4
+                )
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -152,6 +176,7 @@ struct QuestionDetailView: View {
                 Button("Cancel") {
                     isResubmitting = false
                     essayText = ""
+                    hasSubmittedThisSession = false
                 }
                 .tint(.red)
             }
@@ -161,6 +186,7 @@ struct QuestionDetailView: View {
                     Button {
                         essayText = ""
                         isResubmitting = true
+                        hasSubmittedThisSession = false
                     } label: {
                         Image(systemName: "square.and.pencil")
                             .foregroundStyle(BrandColor.primary)
@@ -312,7 +338,6 @@ struct QuestionDetailView: View {
                     Image(systemName: "arrow.counterclockwise.circle.fill")
                         .foregroundStyle(BrandColor.medium)
                         .font(.subheadline)
-
                     VStack(alignment: .leading, spacing: 2) {
                         Text("New Attempt")
                             .font(.caption.weight(.semibold))
@@ -337,7 +362,6 @@ struct QuestionDetailView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .font(.subheadline)
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Beta feature")
                         .font(.caption.weight(.semibold))
@@ -357,7 +381,6 @@ struct QuestionDetailView: View {
                 in: .rect(cornerRadius: 12)
             )
 
-            // Dynamic grading info banner — tap to change method
             gradingInfoBanner
 
             HStack {
@@ -393,7 +416,9 @@ struct QuestionDetailView: View {
             .glassEffect(in: .rect(cornerRadius: 12))
 
             Button {
-                guard wordCount >= minWords, !isSubmitting else { return }
+                guard wordCount >= minWords, !isSubmitting,
+                    !hasSubmittedThisSession
+                else { return }
                 showSubmitConfirm = true
             } label: {
                 Group {
@@ -425,6 +450,7 @@ struct QuestionDetailView: View {
                 .glassEffect(
                     .regular.tint(
                         wordCount >= minWords && !isSubmitting
+                            && !hasSubmittedThisSession
                             ? BrandColor.primary.opacity(0.15)
                             : Color.secondary.opacity(0.1)
                     ).interactive(),
@@ -432,7 +458,9 @@ struct QuestionDetailView: View {
                 )
             }
             .tint(.primary)
-            .disabled(wordCount < minWords || isSubmitting)
+            .disabled(
+                wordCount < minWords || isSubmitting || hasSubmittedThisSession
+            )
 
             if wordCount < minWords {
                 Text(
@@ -608,13 +636,18 @@ struct QuestionDetailView: View {
     }
 
     // MARK: - Submit with Method
+    // Server design: onSubmissionCreated trigger handles ALL grading for ai and quick methods.
+    // iOS only needs to save the submission document — the trigger does the rest.
+    // Do NOT call requestManualGrading() here — that causes double quota counting
+    // and race conditions with the trigger that is already grading the essay.
     private func submitWithMethod(_ method: GradingMethod) async {
-        isSubmitting = true
-
-        guard let userId = Auth.auth().currentUser?.uid else {
-            isSubmitting = false
+        guard !isSubmitting, !hasSubmittedThisSession else {
+            print("[QuestionDetailView] Submit blocked — already in progress")
             return
         }
+
+        isSubmitting = true
+        hasSubmittedThisSession = true
 
         var submission = UserSubmission(
             questionId: question.questionId,
@@ -627,23 +660,17 @@ struct QuestionDetailView: View {
         submission.priority = (method == .quick) ? .high : .normal
 
         do {
-            // Step 1: Save submission + enqueue
+            // Save submission to Firestore — onSubmissionCreated trigger handles grading
             let submissionId = try await FirebaseService.shared.submitEssay(
                 submission
             )
 
-            // Step 2: Trigger AI immediately for .ai method only
-            if method == .ai {
-                let _ = try await AIUsageManager.shared.requestManualGrading(
-                    submissionId: submissionId,
-                    targetUserId: userId
-                )
-            }
-
-            // Step 3: Listen for result (AI: waits for Cloud Function; quick/normal: waits for teacher)
+            // Attach listener to receive grading result when trigger finishes
+            // gradingMethod is passed so iOS-side timeout is applied correctly
             FirebaseService.shared.listenForGradingResult(
                 submissionId: submissionId,
                 questionId: question.questionId,
+                gradingMethod: method,
                 onChange: { _ in
                     Task { await onRefresh?() }
                 },
@@ -664,6 +691,7 @@ struct QuestionDetailView: View {
         } catch let error as AIUsageError {
             await MainActor.run {
                 isSubmitting = false
+                hasSubmittedThisSession = false
                 limitAlertMessage =
                     error.localizedDescription ?? "An error occurred."
                 showLimitAlert = true
@@ -671,6 +699,7 @@ struct QuestionDetailView: View {
         } catch {
             await MainActor.run {
                 isSubmitting = false
+                hasSubmittedThisSession = false
                 limitAlertMessage = error.localizedDescription
                 showLimitAlert = true
             }
@@ -708,7 +737,7 @@ private struct SubmissionReviewView: View {
                 questionNumber: 0,
                 latestSubmission: nil,
                 submissionHistory: [],
-                store: store 
+                store: store
             ).promptSection
 
             essaySection
@@ -726,6 +755,27 @@ private struct SubmissionReviewView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(BrandColor.light)
                     Spacer()
+
+                    // Grading duration — only shown when gradedAt timestamp is available
+                    if let gradedAt = submission.gradedAt {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(
+                                gradingDurationText(
+                                    from: submission.submittedAt,
+                                    to: gradedAt
+                                )
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .glassEffect(in: .capsule)
+                    }
+
                     Text("Score")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -852,7 +902,6 @@ private struct SubmissionReviewView: View {
                 }
 
             } else {
-                // Awaiting grading
                 HStack(spacing: 6) {
                     Image(systemName: submission.gradingMethod.icon)
                         .font(.caption)
@@ -899,20 +948,20 @@ private struct SubmissionReviewView: View {
     }
 
     private var gradedByLabel: String {
-        // If explicitly graded by an AI fallback/cron job
         if let gradedBy = submission.gradedBy, gradedBy.starts(with: "ai_") {
             return "Graded by Gemini AI (Fallback)"
         }
-        
         switch submission.gradingMethod {
-        case .ai: 
+        case .ai:
             return "Graded by Gemini AI"
         case .quick, .normal:
-            let graderStr = submission.gradedByName ?? submission.assignedTeacherEmail
+            let graderStr =
+                submission.gradedByName ?? submission.assignedTeacherEmail
             if let grader = graderStr, !grader.isEmpty, grader != "Teacher" {
                 return "Graded by \(grader)"
             }
-            return submission.gradingMethod == .quick ? "Graded via Quick Grading" : "Graded by Teacher"
+            return submission.gradingMethod == .quick
+                ? "Graded via Quick Grading" : "Graded by Teacher"
         }
     }
 
@@ -1166,7 +1215,6 @@ private struct HistoryAttemptCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                 Spacer()
-                // Show grading method badge
                 HStack(spacing: 4) {
                     Image(systemName: submission.gradingMethod.icon)
                         .font(.caption2)
@@ -1201,6 +1249,26 @@ private struct HistoryAttemptCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+
+                // Grading duration capsule — only shown when gradedAt is available
+                if let gradedAt = submission.gradedAt {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(
+                            gradingDurationText(
+                                from: submission.submittedAt,
+                                to: gradedAt
+                            )
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .glassEffect(in: .capsule)
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {

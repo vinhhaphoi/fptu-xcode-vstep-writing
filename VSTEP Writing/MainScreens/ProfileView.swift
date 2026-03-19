@@ -305,7 +305,8 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - Quota Card (data from server sync)
+    // MARK: - Quota Card
+    // Daily usage rows + cumulative token counter (subscribed users only)
     private var quotaCard: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -375,12 +376,21 @@ struct ProfileView: View {
                 isUnlimited: false,
                 isLocked: isFree,
                 isWeekly: true,
-                isLast: true
+                // isLast only when tokens row is hidden
+                isLast: isFree
             )
+
+            // Cumulative Gemini token counter — only visible for subscribed users
+            // Value comes from users/{uid}.stats.totalTokensUsed (all-time, not daily)
+            if !isFree {
+                Divider().padding(.leading, 68)
+                tokenUsageRow(count: usageManager.totalTokensUsed)
+            }
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
+    // MARK: - Quota Row
     private func quotaRow(
         icon: String,
         iconColor: Color,
@@ -481,6 +491,52 @@ struct ProfileView: View {
                 .padding(.trailing, 20)
             }
             .padding(.vertical, 14)
+        }
+    }
+
+    // MARK: - Token Usage Row
+    // Displays cumulative Gemini API tokens consumed since account creation.
+    // Source: users/{uid}.stats.totalTokensUsed, written by trackTokenUsage() on the server.
+    // This is all-time total, not daily — no reset or quota bar.
+    private func tokenUsageRow(count: Int) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "cpu")
+                .font(.system(size: cardIconSize))
+                .foregroundStyle(Color.indigo)
+                .frame(width: cardIconFrameWidth)
+                .padding(.leading, 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Gemini tokens used")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text("Cumulative total across all AI features")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            // Format with K/M suffix for readability
+            Text(formattedTokenCount(count))
+                .font(.caption2.bold().monospacedDigit())
+                .foregroundStyle(Color.indigo)
+                .padding(.trailing, 20)
+        }
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - Token Count Formatter
+    private func formattedTokenCount(_ count: Int) -> String {
+        switch count {
+        case 0: return "0"
+        case 1..<1000: return "\(count)"
+        case 1000..<1_000_000:
+            let k = Double(count) / 1000.0
+            return String(format: "%.1fK", k)
+        default:
+            let m = Double(count) / 1_000_000.0
+            return String(format: "%.2fM", m)
         }
     }
 
@@ -633,15 +689,15 @@ struct ProfileView: View {
             await MainActor.run {
                 let isSubscribed = data?["isSubscribed"] as? Bool ?? false
                 let tier = data?["subscriptionTier"] as? String ?? "free"
-                
+
                 subscriptionStatus = isSubscribed ? "active" : nil
-                
+
                 switch tier {
                 case "advanced": subscriptionProductID = "com.vstep.advanced"
                 case "premier": subscriptionProductID = "com.vstep.premier"
                 default: subscriptionProductID = nil
                 }
-                
+
                 subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
                 isLoadingSubscription = false
             }
