@@ -306,12 +306,14 @@ struct ProfileView: View {
     }
 
     // MARK: - Quota Card
-    // Data sources per row:
-    //   Essays per day       -> users/{uid}/usage.essay.count       (daily reset)
-    //   AI grading today     -> tokenUsage collection feature=essay  (count today, daily)
-    //   Chatbot questions    -> users/{uid}/usage.chat.count         (daily reset)
-    //   AI insight refreshes -> users/{uid}/usage.analytics.count    (weekly reset)
-    //   Gemini tokens        -> tokenUsage collection cumulative sum  (no reset)
+    // Rows and their data sources:
+    //   AI Grading today     -> tokenUsage collection, feature=essay, createdAt today (daily)
+    //   Chatbot questions    -> users/{uid}/usage.chat.count                            (daily)
+    //   AI insight refreshes -> users/{uid}/usage.analytics.count                      (weekly)
+    //   Gemini tokens        -> tokenUsage collection cumulative sum                   (all-time)
+    //
+    // "Essays per day" row intentionally removed — essay submission and AI grading
+    // are the same action for paid users; displaying both was redundant and confusing.
     private var quotaCard: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -336,66 +338,52 @@ struct ProfileView: View {
 
             Divider().padding(.horizontal, 20)
 
-            quotaRow(
-                icon: "doc.text",
-                iconColor: BrandColor.primary,
-                title: "Essays per day",
-                used: usageManager.essayUsedToday,
-                total: usageManager.essayLimitPerDay,
-                isUnlimited: false,
-                isLocked: isFree
-            )
-
-            Divider().padding(.leading, 68)
-
-            // AI grading: sourced from tokenUsage collection (feature == "essay", createdAt today)
+            // AI Grading — tokenUsage collection, feature=essay, count within today
             quotaRow(
                 icon: "brain.head.profile",
                 iconColor: BrandColor.medium,
-                title: "AI grading today",
+                title: "AI Grading today",
                 used: usageManager.aiGradingUsedToday,
                 total: usageManager.aiGradingLimitPerDay,
-                isUnlimited: false,
                 isLocked: isFree
             )
 
             Divider().padding(.leading, 68)
 
+            // Chatbot — users/{uid}/usage.chat.count
             quotaRow(
                 icon: "bubble.left.and.bubble.right",
                 iconColor: BrandColor.soft,
                 title: "Chatbot questions",
                 used: usageManager.chatUsedToday,
                 total: usageManager.chatLimitPerDay,
-                isUnlimited: false,
                 isLocked: isFree
             )
 
             Divider().padding(.leading, 68)
 
+            // AI insight refreshes — users/{uid}/usage.analytics.count, weekly
             quotaRow(
                 icon: "chart.bar.doc.horizontal",
                 iconColor: BrandColor.light,
                 title: "AI insight refreshes",
                 used: usageManager.insightUsedThisWeek,
                 total: usageManager.insightLimitPerWeek,
-                isUnlimited: false,
                 isLocked: isFree,
                 isWeekly: true
             )
 
             Divider().padding(.leading, 68)
 
-            // Gemini token row: shows cumulative input/output breakdown, no limit bar
+            // Gemini tokens — cumulative all-time total with input/output breakdown
             geminiTokenRow
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
     // MARK: - Gemini Token Row
-    // Shows cumulative input + output token breakdown from tokenUsage collection
+    // Displays cumulative input/output token breakdown from tokenUsage collection
     // No progress bar — there is no enforced per-user token limit
-    // Icon uses BrandColor.light to stay consistent with other rows in the card
     private var geminiTokenRow: some View {
         HStack(spacing: 14) {
             Image(systemName: "cpu")
@@ -417,7 +405,6 @@ struct ProfileView: View {
                         .foregroundStyle(BrandColor.medium)
                 }
 
-                // Show input/output breakdown when data is available
                 if usageManager.geminiTotalTokens > 0 {
                     HStack(spacing: 10) {
                         HStack(spacing: 3) {
@@ -443,7 +430,7 @@ struct ProfileView: View {
                             .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("Cumulative all-time")
+                        Text("All-time cumulative")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -459,7 +446,7 @@ struct ProfileView: View {
     }
 
     // MARK: - Format Token Count
-    // Formats large numbers for compact display: 7153 -> "7.2K", 1200000 -> "1.2M"
+    // Formats large numbers: 7153 -> "7.2K", 1500000 -> "1.5M"
     private func formatTokenCount(_ count: Int) -> String {
         if count >= 1_000_000 {
             return String(format: "%.1fM", Double(count) / 1_000_000)
@@ -476,15 +463,12 @@ struct ProfileView: View {
         title: String,
         used: Int,
         total: Int,
-        isUnlimited: Bool,
         isLocked: Bool = false,
         isWeekly: Bool = false
     ) -> some View {
         let remaining = max(0, total - used)
-        let progress =
-            isUnlimited || total == 0
-            ? 1.0 : min(Double(used) / Double(total), 1.0)
-        let isExhausted = !isUnlimited && !isLocked && remaining == 0
+        let progress = total == 0 ? 0.0 : min(Double(used) / Double(total), 1.0)
+        let isExhausted = !isLocked && total > 0 && remaining == 0
 
         return HStack(spacing: 14) {
             Image(systemName: isLocked ? "lock" : icon)
@@ -517,10 +501,6 @@ struct ProfileView: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(Capsule().fill(BrandColor.primary))
-                    } else if isUnlimited {
-                        Label("Unlimited", systemImage: "infinity")
-                            .font(.caption2.bold())
-                            .foregroundStyle(BrandColor.light)
                     } else {
                         Text(isExhausted ? "Used up" : "\(remaining) left")
                             .font(.caption2.bold())
@@ -530,7 +510,7 @@ struct ProfileView: View {
                     }
                 }
 
-                if !isLocked && !isUnlimited && total > 0 {
+                if !isLocked && total > 0 {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule()
@@ -557,10 +537,6 @@ struct ProfileView: View {
                     .frame(height: 5)
 
                     Text("\(used) / \(total) used")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if isUnlimited {
-                    Text("\(used) used today")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -719,15 +695,12 @@ struct ProfileView: View {
             await MainActor.run {
                 let isSubscribed = data?["isSubscribed"] as? Bool ?? false
                 let tier = data?["subscriptionTier"] as? String ?? "free"
-
                 subscriptionStatus = isSubscribed ? "active" : nil
-
                 switch tier {
                 case "advanced": subscriptionProductID = "com.vstep.advanced"
                 case "premier": subscriptionProductID = "com.vstep.premier"
                 default: subscriptionProductID = nil
                 }
-
                 subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?
                     .dateValue()
                 isLoadingSubscription = false

@@ -32,6 +32,12 @@ extension FirebaseService {
     // MARK: - Fetch All Plan Limits from settings/subscription_plans
     // Quota source per Cloud Functions v3.0 — single document fetch
     // Returns [productID: PlanLimits] keyed by com.vstep.* product IDs
+    // Field mapping from settings document:
+    //   aiGradingPerDay          -> gradingAttemptsPerEssay (used for AI grading daily count)
+    //   chatsPerDay              -> chatbotQuestionsPerDay
+    //   analyticsPerWeek         -> insightRefreshesPerWeek
+    //   essaysPerDay             -> maxEssaysPerDay
+    //   submissionsPerEssayPerDay -> submissionsPerEssayPerDay
     func fetchAllPlanLimits() async -> [String: PlanLimits] {
         let snap =
             try? await db
@@ -46,7 +52,7 @@ extension FirebaseService {
 
         var result: [String: PlanLimits] = [:]
 
-        // Map server tier keys -> product IDs
+        // Map server tier keys to product IDs
         let tierToProductID: [String: String] = [
             "advanced": "com.vstep.advanced",
             "premier": "com.vstep.premier",
@@ -55,10 +61,16 @@ extension FirebaseService {
         for (tier, productID) in tierToProductID {
             guard let tierData = data[tier] as? [String: Any] else { continue }
 
+            // aiGradingPerDay is the new primary field for grading quota
+            // gradingAttemptsPerEssay kept as fallback for backward compatibility
+            let gradingPerDay =
+                tierData["aiGradingPerDay"] as? Int
+                ?? tierData["gradingAttemptsPerEssay"] as? Int
+                ?? 3
+
             result[productID] = PlanLimits(
                 maxEssaysPerDay: tierData["essaysPerDay"] as? Int ?? 0,
-                gradingAttemptsPerEssay: tierData["gradingAttemptsPerEssay"]
-                    as? Int ?? 3,
+                gradingAttemptsPerEssay: gradingPerDay,
                 submissionsPerEssayPerDay: tierData["submissionsPerEssayPerDay"]
                     as? Int ?? 3,
                 chatbotQuestionsPerDay: tierData["chatsPerDay"] as? Int ?? 0,

@@ -21,6 +21,10 @@ struct SubscriptionsView: View {
                 headerCard
                     .padding()
 
+                // Free tier info card — shown to all users
+                freeTierCard
+                    .padding(.horizontal)
+
                 if activeProductID != nil {
                     activeSubscriptionSection
                         .padding(.horizontal)
@@ -78,14 +82,92 @@ struct SubscriptionsView: View {
                 .font(.title2.bold())
                 .foregroundStyle(BrandColor.primary)
 
-            Text("Unlock your full writing potential")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            Text(
+                "Unlock AI-powered grading, chatbot assistance, and progress insights"
+            )
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
         .glassEffect(in: .rect(cornerRadius: 16.0))
+    }
+
+    // MARK: - Free Tier Card
+    // Explains what free users can and cannot do
+    private var freeTierCard: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 15) {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 26))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Free Plan")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("No AI features — Normal grading queue only")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider().padding(.leading, 70)
+
+            freeBenefitRow(
+                icon: "clock.fill",
+                text: "Submit essays via Normal queue",
+                subtitle: "Teacher grades within 3 hours on claim basis"
+            )
+
+            Divider().padding(.leading, 70)
+
+            freeBenefitRow(
+                icon: "xmark.circle",
+                text: "No AI grading, chatbot or analytics",
+                subtitle: "Upgrade to access AI features",
+                isUnavailable: true
+            )
+        }
+        .glassEffect(in: .rect(cornerRadius: 16.0))
+    }
+
+    private func freeBenefitRow(
+        icon: String,
+        text: String,
+        subtitle: String,
+        isUnavailable: Bool = false
+    ) -> some View {
+        HStack(spacing: 15) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundStyle(
+                    isUnavailable
+                        ? Color.secondary.opacity(0.4) : BrandColor.light
+                )
+                .frame(width: 40)
+                .padding(.leading, 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(text)
+                    .font(.system(size: 15))
+                    .foregroundStyle(
+                        isUnavailable ? Color.secondary.opacity(0.6) : .primary
+                    )
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .padding(.trailing, 20)
     }
 
     // MARK: - Active Subscription Section
@@ -156,6 +238,7 @@ struct SubscriptionsView: View {
         let plan = plans[product.id]
         let isActive = activeProductID == product.id
         let limits = planLimits[product.id]
+        let isPremier = product.id == "com.vstep.premier"
 
         return VStack(spacing: 0) {
 
@@ -213,88 +296,50 @@ struct SubscriptionsView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
 
-            Divider()
-                .padding(.leading, 70)
+            Divider().padding(.leading, 70)
 
+            // Quick stats badges
             if let limits {
                 liveLimitsSection(limits: limits)
-                Divider()
-                    .padding(.leading, 70)
+                Divider().padding(.leading, 70)
             }
 
-            if let benefits = plan?.benefits {
-                let maxEssays = limits?.maxEssaysPerDay ?? 1
-                let gradingAttempts = limits?.gradingAttemptsPerEssay ?? 1
-                let submissions = limits?.submissionsPerEssayPerDay ?? 1
-                let isUnlimitedEssays = maxEssays == Int.max
-
-                VStack(spacing: 0) {
-                    benefitRow(
-                        icon: "doc.text.magnifyingglass",
-                        title: isUnlimitedEssays
-                            ? "Unlimited essays graded by AI today"
-                            : "\(maxEssays) essay\(maxEssays > 1 ? "s" : "") graded by AI today",
-                        subtitle:
-                            "Up to \(gradingAttempts) AI attempt\(gradingAttempts > 1 ? "s" : "") · \(submissions) submission\(submissions > 1 ? "s" : "")/essay — unused quota resets tomorrow",
-                        enabled: benefits.unlimitedTests
-                    )
-                    benefitRow(
-                        icon: "bubble.left.and.bubble.right.fill",
-                        title: "AI Writing Chatbot",
-                        subtitle:
-                            "\(limits?.chatbotQuestionsPerDay ?? 0) questions/day",
-                        enabled: benefits.aiGrammarCheck
-                    )
-                    benefitRow(
-                        icon: "chart.bar.fill",
-                        title: "Advanced Analytics",
-                        subtitle: limits.map {
-                            "\($0.insightRefreshesPerWeek) AI insight refresh\($0.insightRefreshesPerWeek > 1 ? "es" : "")/week"
-                        },
-                        enabled: benefits.detailedAnalytics
-                    )
-                    benefitRow(
-                        icon: "star.fill",
-                        title: "Priority Support",
-                        subtitle: nil,
-                        enabled: benefits.prioritySupport,
-                        badge: .comingSoon,
-                        isLast: true
-                    )
-                }
-            } else {
-                skeletonBenefits
-            }
+            // Benefit rows using new benefit structure
+            gradingBenefitRow(limits: limits, isPremier: isPremier)
+            Divider().padding(.leading, 70)
+            chatbotBenefitRow(limits: limits)
+            Divider().padding(.leading, 70)
+            analyticsBenefitRow(limits: limits)
+            Divider().padding(.leading, 70)
+            priorityBenefitRow(enabled: isPremier)
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
     }
 
     // MARK: - Live Limits Section
+    // Shows compact numeric badges for key quotas at a glance
     private func liveLimitsSection(limits: PlanLimits) -> some View {
         HStack(spacing: 0) {
             limitBadge(
-                icon: "doc.text.fill",
-                value: limits.maxEssaysPerDay == Int.max
-                    ? "∞" : "\(limits.maxEssaysPerDay)",
-                label: "Essays/day"
-            )
-
-            Divider().frame(height: 36)
-
-            limitBadge(
-                icon: "brain.head.profile",
-                value: limits.gradingAttemptsPerEssay == Int.max
-                    ? "∞" : "\(limits.gradingAttemptsPerEssay)x",
-                label: "AI Grading"
+                icon: "sparkles",
+                value: "\(limits.gradingAttemptsPerEssay)x",
+                label: "AI Grading/day"
             )
 
             Divider().frame(height: 36)
 
             limitBadge(
                 icon: "bubble.left.fill",
-                value: limits.chatbotQuestionsPerDay == 0
-                    ? "—" : "\(limits.chatbotQuestionsPerDay)",
+                value: "\(limits.chatbotQuestionsPerDay)",
                 label: "Chat/day"
+            )
+
+            Divider().frame(height: 36)
+
+            limitBadge(
+                icon: "chart.bar.doc.horizontal",
+                value: "\(limits.insightRefreshesPerWeek)",
+                label: "Insights/week"
             )
         }
         .padding(.vertical, 12)
@@ -320,7 +365,61 @@ struct SubscriptionsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Benefit Row
+    // MARK: - Individual Benefit Rows
+
+    // AI Grading row — describes Quick and AI grading modes available per day
+    private func gradingBenefitRow(limits: PlanLimits?, isPremier: Bool)
+        -> some View
+    {
+        let count = limits?.gradingAttemptsPerEssay ?? 0
+        let subtitle =
+            isPremier
+            ? "Quick (AI + Teacher parallel) and AI modes · \(count) uses/day"
+            : "Quick (AI + Teacher parallel) and AI modes · \(count) uses/day"
+
+        return benefitRow(
+            icon: "brain.head.profile",
+            title: "AI Grading",
+            subtitle: subtitle,
+            enabled: true
+        )
+    }
+
+    // Chatbot row — daily question quota
+    private func chatbotBenefitRow(limits: PlanLimits?) -> some View {
+        let count = limits?.chatbotQuestionsPerDay ?? 0
+        return benefitRow(
+            icon: "bubble.left.and.bubble.right.fill",
+            title: "AI Writing Chatbot",
+            subtitle: "\(count) questions/day",
+            enabled: true
+        )
+    }
+
+    // Analytics row — weekly insight slot quota
+    private func analyticsBenefitRow(limits: PlanLimits?) -> some View {
+        let count = limits?.insightRefreshesPerWeek ?? 0
+        return benefitRow(
+            icon: "chart.bar.fill",
+            title: "AI Advanced Analytics",
+            subtitle: "\(count) insight slot\(count > 1 ? "s" : "")/week",
+            enabled: true
+        )
+    }
+
+    // Priority support row — Premier only
+    private func priorityBenefitRow(enabled: Bool) -> some View {
+        benefitRow(
+            icon: "star.fill",
+            title: "Priority Support",
+            subtitle: nil,
+            enabled: enabled,
+            badge: .comingSoon,
+            isLast: true
+        )
+    }
+
+    // MARK: - Generic Benefit Row
     private enum BenefitBadge {
         case comingSoon
     }
@@ -387,7 +486,7 @@ struct SubscriptionsView: View {
         }
     }
 
-    // MARK: - Skeleton
+    // MARK: - Skeleton Loading
     private var skeletonBenefits: some View {
         VStack(spacing: 0) {
             ForEach(0..<4, id: \.self) { _ in
