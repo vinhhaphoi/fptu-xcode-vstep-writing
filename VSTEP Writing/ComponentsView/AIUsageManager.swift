@@ -64,7 +64,8 @@ class AIUsageManager {
         }
     }
 
-    // MARK: - Chat Quota (synced from server)
+    // MARK: - Chat Quota
+    // Source: users/{uid}/usage.chat.count — resets daily by Cloud Function
     var chatUsedToday: Int = 0
     var chatLimitPerDay: Int = 10
 
@@ -76,22 +77,34 @@ class AIUsageManager {
         chatUsedToday >= chatLimitPerDay
     }
 
-    // MARK: - Essay Quota (synced from server)
+    // MARK: - Essay Quota
+    // Source: users/{uid}/usage.essay.count — resets daily by Cloud Function
     var essayUsedToday: Int = 0
     var essayLimitPerDay: Int = 3
-    var essayGradingUsedMax: Int = 0
-    var essayGradingLimit: Int = 3
 
-    // MARK: - Insight Quota (synced from server)
+    // MARK: - AI Grading Quota
+    // Source: tokenUsage collection — count of documents where feature == "essay"
+    // and createdAt falls within today (local midnight to now)
+    // This represents how many AI grading calls were made today
+    var aiGradingUsedToday: Int = 0
+    var aiGradingLimitPerDay: Int = 3
+
+    // MARK: - Insight Quota
+    // Source: users/{uid}/usage.analytics.count — resets weekly by Cloud Function
     var insightUsedThisWeek: Int = 0
     var insightLimitPerWeek: Int = 3
 
-    // MARK: - Token Usage (synced from server)
-    // Server stores cumulative total in users/{uid}.stats.totalTokensUsed
-    // via the tokenUsage collection (trackTokenUsage function)
-    var totalTokensUsed: Int = 0
+    // MARK: - Gemini Token Usage
+    // Source: tokenUsage collection filtered by uid — cumulative sum of totalTokens
+    // inputTokens and outputTokens are also tracked separately for display
+    var geminiTotalTokens: Int = 0
+    var geminiInputTokens: Int = 0
+    var geminiOutputTokens: Int = 0
 
-    // MARK: - Sync all usage + limits from server
+    // MARK: - Sync all usage and limits from server
+    // Step 1: reads usage counters from users/{uid}/usage map
+    // Step 2: reads quota limits from settings/subscription_plans
+    // Step 3: reads token usage and AI grading count from tokenUsage collection
     func syncUsageFromServer() async {
         guard let uid = Auth.auth().currentUser?.uid else { return }
         isLoading = true
@@ -104,29 +117,21 @@ class AIUsageManager {
 
             guard let data = snap.data() else { return }
 
+            // Read usage counters — structure: usage.{feature}.count
             if let usageMap = data["usage"] as? [String: Any] {
-                // Chat quota
                 if let chatMap = usageMap["chat"] as? [String: Any] {
                     chatUsedToday = chatMap["count"] as? Int ?? 0
                 }
-                // Essay quota
                 if let essayMap = usageMap["essay"] as? [String: Any] {
+                    // Only count and lastReset exist — no attempts sub-field
                     essayUsedToday = essayMap["count"] as? Int ?? 0
-                    let attemptsMap =
-                        essayMap["attempts"] as? [String: Int] ?? [:]
-                    essayGradingUsedMax = attemptsMap.values.max() ?? 0
                 }
-                // Analytics / insight quota
                 if let analyticsMap = usageMap["analytics"] as? [String: Any] {
                     insightUsedThisWeek = analyticsMap["count"] as? Int ?? 0
                 }
             }
 
-            // Cumulative token count stored in stats.totalTokensUsed by trackTokenUsage()
-            if let statsMap = data["stats"] as? [String: Any] {
-                totalTokensUsed = statsMap["totalTokensUsed"] as? Int ?? 0
-            }
-
+            // Read quota limits from settings/subscription_plans
             if let tier = data["subscriptionTier"] as? String {
                 let planSnap = try? await Firestore.firestore()
                     .collection("settings").document("subscription_plans")
@@ -136,14 +141,80 @@ class AIUsageManager {
                 {
                     chatLimitPerDay = tierData["chatsPerDay"] as? Int ?? 10
                     essayLimitPerDay = tierData["essaysPerDay"] as? Int ?? 3
-                    essayGradingLimit =
+                    aiGradingLimitPerDay =
                         tierData["gradingAttemptsPerEssay"] as? Int ?? 3
                     insightLimitPerWeek =
                         tierData["analyticsPerWeek"] as? Int ?? 3
                 }
             }
+
+            // Sync token usage and AI grading count from tokenUsage collection
+            await syncTokenUsage(uid: uid)
+
         } catch {
             print("[AIUsageManager] Sync error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Sync Token Usage
+    // Queries tokenUsage collection filtered by uid only (avoids composite index requirement)
+    // Then filters locally by date and feature for today's AI grading count
+    // Sums all totalTokens, inputTokens, outputTokens cumulatively
+    private func syncTokenUsage(uid: String) async {
+        do {
+            let snapshot = try await Firestore.firestore()
+                .collection("tokenUsage")
+                .whereField("uid", isEqualTo: uid)
+                .getDocuments()
+
+            // Calculate today's date range in local timezone (midnight to now)
+            let calendar = Calendar.current
+            let todayStart = calendar.startOfDay(for: Date())
+            let todayStartTimestamp = Timestamp(date: todayStart)
+
+            var totalTokens = 0
+            var totalInput = 0
+            var totalOutput = 0
+            var gradingCountToday = 0
+
+            for doc in snapshot.documents {
+                let docData = doc.data()
+                let tokens = docData["totalTokens"] as? Int ?? 0
+                let input = docData["inputTokens"] as? Int ?? 0
+                let output = docData["outputTokens"] as? Int ?? 0
+                let feature = docData["feature"] as? String ?? ""
+                let createdAt = docData["createdAt"] as? Timestamp
+
+                // Accumulate cumulative totals across all documents
+                totalTokens += tokens
+                totalInput += input
+                totalOutput += output
+
+                // Count AI grading calls made today (feature == "essay" within today)
+                if feature == "essay",
+                    let ts = createdAt,
+                    ts.seconds >= todayStartTimestamp.seconds
+                {
+                    gradingCountToday += 1
+                }
+            }
+
+            geminiTotalTokens = totalTokens
+            geminiInputTokens = totalInput
+            geminiOutputTokens = totalOutput
+            aiGradingUsedToday = gradingCountToday
+
+            print(
+                "[AIUsageManager] Tokens — total: \(totalTokens), input: \(totalInput), output: \(totalOutput)"
+            )
+            print(
+                "[AIUsageManager] AI grading today: \(gradingCountToday) from \(snapshot.documents.count) docs"
+            )
+
+        } catch {
+            print(
+                "[AIUsageManager] syncTokenUsage error: \(error.localizedDescription)"
+            )
         }
     }
 

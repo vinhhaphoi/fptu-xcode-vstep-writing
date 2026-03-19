@@ -306,7 +306,12 @@ struct ProfileView: View {
     }
 
     // MARK: - Quota Card
-    // Daily usage rows + cumulative token counter (subscribed users only)
+    // Data sources per row:
+    //   Essays per day       -> users/{uid}/usage.essay.count       (daily reset)
+    //   AI grading today     -> tokenUsage collection feature=essay  (count today, daily)
+    //   Chatbot questions    -> users/{uid}/usage.chat.count         (daily reset)
+    //   AI insight refreshes -> users/{uid}/usage.analytics.count    (weekly reset)
+    //   Gemini tokens        -> tokenUsage collection cumulative sum  (no reset)
     private var quotaCard: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -343,12 +348,13 @@ struct ProfileView: View {
 
             Divider().padding(.leading, 68)
 
+            // AI grading: sourced from tokenUsage collection (feature == "essay", createdAt today)
             quotaRow(
                 icon: "brain.head.profile",
                 iconColor: BrandColor.medium,
-                title: "AI grading per essay",
-                used: usageManager.essayGradingUsedMax,
-                total: usageManager.essayGradingLimit,
+                title: "AI grading today",
+                used: usageManager.aiGradingUsedToday,
+                total: usageManager.aiGradingLimitPerDay,
                 isUnlimited: false,
                 isLocked: isFree
             )
@@ -375,19 +381,92 @@ struct ProfileView: View {
                 total: usageManager.insightLimitPerWeek,
                 isUnlimited: false,
                 isLocked: isFree,
-                isWeekly: true,
-                // isLast only when tokens row is hidden
-                isLast: isFree
+                isWeekly: true
             )
 
-            // Cumulative Gemini token counter — only visible for subscribed users
-            // Value comes from users/{uid}.stats.totalTokensUsed (all-time, not daily)
-            if !isFree {
-                Divider().padding(.leading, 68)
-                tokenUsageRow(count: usageManager.totalTokensUsed)
-            }
+            Divider().padding(.leading, 68)
+
+            // Gemini token row: shows cumulative input/output breakdown, no limit bar
+            geminiTokenRow
         }
         .glassEffect(in: .rect(cornerRadius: 16.0))
+    }
+
+    // MARK: - Gemini Token Row
+    // Shows cumulative input + output token breakdown from tokenUsage collection
+    // No progress bar — there is no enforced per-user token limit
+    // Icon uses BrandColor.light to stay consistent with other rows in the card
+    private var geminiTokenRow: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "cpu")
+                .font(.system(size: cardIconSize))
+                .foregroundStyle(BrandColor.light)
+                .frame(width: cardIconFrameWidth)
+                .padding(.leading, 20)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("Gemini tokens used")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Text(formatTokenCount(usageManager.geminiTotalTokens))
+                        .font(.caption2.bold())
+                        .foregroundStyle(BrandColor.medium)
+                }
+
+                // Show input/output breakdown when data is available
+                if usageManager.geminiTotalTokens > 0 {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 3) {
+                            Text("In:")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(
+                                formatTokenCount(usageManager.geminiInputTokens)
+                            )
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 3) {
+                            Text("Out:")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(
+                                formatTokenCount(
+                                    usageManager.geminiOutputTokens
+                                )
+                            )
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("Cumulative all-time")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                } else {
+                    Text("No token usage recorded yet")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.trailing, 20)
+        }
+        .padding(.vertical, 14)
+    }
+
+    // MARK: - Format Token Count
+    // Formats large numbers for compact display: 7153 -> "7.2K", 1200000 -> "1.2M"
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000)
+        } else if count >= 1_000 {
+            return String(format: "%.1fK", Double(count) / 1_000)
+        }
+        return "\(count)"
     }
 
     // MARK: - Quota Row
@@ -399,8 +478,7 @@ struct ProfileView: View {
         total: Int,
         isUnlimited: Bool,
         isLocked: Bool = false,
-        isWeekly: Bool = false,
-        isLast: Bool = false
+        isWeekly: Bool = false
     ) -> some View {
         let remaining = max(0, total - used)
         let progress =
@@ -408,136 +486,88 @@ struct ProfileView: View {
             ? 1.0 : min(Double(used) / Double(total), 1.0)
         let isExhausted = !isUnlimited && !isLocked && remaining == 0
 
-        return VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Image(systemName: isLocked ? "lock" : icon)
-                    .font(.system(size: cardIconSize))
-                    .foregroundStyle(isLocked ? Color.secondary : iconColor)
-                    .frame(width: cardIconFrameWidth)
-                    .padding(.leading, 20)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(isLocked ? .secondary : .primary)
-
-                        if isWeekly {
-                            Text("/ week")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .glassEffect(in: .capsule)
-                        }
-
-                        Spacer()
-
-                        if isLocked {
-                            Text("Upgrade")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(BrandColor.primary))
-                        } else if isUnlimited {
-                            Label("Unlimited", systemImage: "infinity")
-                                .font(.caption2.bold())
-                                .foregroundStyle(BrandColor.light)
-                        } else {
-                            Text(isExhausted ? "Used up" : "\(remaining) left")
-                                .font(.caption2.bold())
-                                .foregroundStyle(
-                                    isExhausted ? Color.red : BrandColor.medium
-                                )
-                        }
-                    }
-
-                    if !isLocked && !isUnlimited && total > 0 {
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(BrandColor.muted.opacity(0.7))
-                                    .frame(height: 5)
-                                Capsule()
-                                    .fill(
-                                        isExhausted
-                                            ? Color.red
-                                            : progress > 0.75
-                                                ? Color.orange
-                                                : iconColor
-                                    )
-                                    .frame(
-                                        width: geo.size.width * progress,
-                                        height: 5
-                                    )
-                                    .animation(
-                                        .easeOut(duration: 0.5),
-                                        value: progress
-                                    )
-                            }
-                        }
-                        .frame(height: 5)
-
-                        Text("\(used) / \(total) used")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else if isUnlimited {
-                        Text("\(used) used today")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.trailing, 20)
-            }
-            .padding(.vertical, 14)
-        }
-    }
-
-    // MARK: - Token Usage Row
-    // Displays cumulative Gemini API tokens consumed since account creation.
-    // Source: users/{uid}.stats.totalTokensUsed, written by trackTokenUsage() on the server.
-    // This is all-time total, not daily — no reset or quota bar.
-    private func tokenUsageRow(count: Int) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: "cpu")
+        return HStack(spacing: 14) {
+            Image(systemName: isLocked ? "lock" : icon)
                 .font(.system(size: cardIconSize))
-                .foregroundStyle(Color.indigo)
+                .foregroundStyle(isLocked ? Color.secondary : iconColor)
                 .frame(width: cardIconFrameWidth)
                 .padding(.leading, 20)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Gemini tokens used")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.primary)
-                Text("Cumulative total across all AI features")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(isLocked ? .secondary : .primary)
+
+                    if isWeekly {
+                        Text("/ week")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .glassEffect(in: .capsule)
+                    }
+
+                    Spacer()
+
+                    if isLocked {
+                        Text("Upgrade")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(BrandColor.primary))
+                    } else if isUnlimited {
+                        Label("Unlimited", systemImage: "infinity")
+                            .font(.caption2.bold())
+                            .foregroundStyle(BrandColor.light)
+                    } else {
+                        Text(isExhausted ? "Used up" : "\(remaining) left")
+                            .font(.caption2.bold())
+                            .foregroundStyle(
+                                isExhausted ? Color.red : BrandColor.medium
+                            )
+                    }
+                }
+
+                if !isLocked && !isUnlimited && total > 0 {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(BrandColor.muted.opacity(0.7))
+                                .frame(height: 5)
+                            Capsule()
+                                .fill(
+                                    isExhausted
+                                        ? Color.red
+                                        : progress > 0.75
+                                            ? Color.orange
+                                            : iconColor
+                                )
+                                .frame(
+                                    width: geo.size.width * progress,
+                                    height: 5
+                                )
+                                .animation(
+                                    .easeOut(duration: 0.5),
+                                    value: progress
+                                )
+                        }
+                    }
+                    .frame(height: 5)
+
+                    Text("\(used) / \(total) used")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if isUnlimited {
+                    Text("\(used) used today")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
-
-            Spacer()
-
-            // Format with K/M suffix for readability
-            Text(formattedTokenCount(count))
-                .font(.caption2.bold().monospacedDigit())
-                .foregroundStyle(Color.indigo)
-                .padding(.trailing, 20)
+            .padding(.trailing, 20)
         }
         .padding(.vertical, 14)
-    }
-
-    // MARK: - Token Count Formatter
-    private func formattedTokenCount(_ count: Int) -> String {
-        switch count {
-        case 0: return "0"
-        case 1..<1000: return "\(count)"
-        case 1000..<1_000_000:
-            let k = Double(count) / 1000.0
-            return String(format: "%.1fK", k)
-        default:
-            let m = Double(count) / 1_000_000.0
-            return String(format: "%.2fM", m)
-        }
     }
 
     // MARK: - Policy Buttons
@@ -698,7 +728,8 @@ struct ProfileView: View {
                 default: subscriptionProductID = nil
                 }
 
-                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?.dateValue()
+                subscriptionExpiry = (data?["expiryDate"] as? Timestamp)?
+                    .dateValue()
                 isLoadingSubscription = false
             }
         } catch {
