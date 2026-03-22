@@ -694,33 +694,3 @@ enum QuickActionType: String, Identifiable {
 
     var id: String { rawValue }
 }
-
-// MARK: - Grammar Placeholder
-struct GrammarView: View {
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Text("Grammar Guide").font(.largeTitle.bold())
-                Text("Coming soon...").foregroundStyle(.secondary)
-            }
-            .padding()
-        }
-        .navigationTitle("Grammar")
-        .toolbarTitleDisplayMode(.inline)
-    }
-}
-
-// MARK: - Tips Placeholder
-struct TipsView: View {
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Text("Writing Tips").font(.largeTitle.bold())
-                Text("Coming soon...").foregroundStyle(.secondary)
-            }
-            .padding()
-        }
-        .navigationTitle("Tips")
-        .toolbarTitleDisplayMode(.inline)
-    }
-}
